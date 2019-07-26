@@ -10,13 +10,13 @@ coad_interest_data<-coad_TCGA_data[,c("Hugo_Symbol","Tumor_Sample_Barcode","One_
 coad_interest_data$MAF<-with(coad_TCGA_data,t_alt_count/t_depth)
 
 #Calculating MATH for each patient
-coad_final_data={aggregate(coad_interest_data$MAF,
+coad_MATH_data={aggregate(coad_interest_data$MAF,
                                  list(coad_interest_data$Tumor_Sample_Barcode),
                                  function(MAF){
                                    MAD<-median(abs(MAF-median(MAF)))*1.4826
                                    MATH<-100*MAD/median(MAF)
                                    MATH})}
-names(coad_final_data)<-c("Tumor_Sample_Barcode","MATH")
+names(coad_MATH_data)<-c("Tumor_Sample_Barcode","MATH")
 
 #Pathways list of lists (Daniel Sobral)
 
@@ -73,7 +73,7 @@ variables<-{t(sapply(apply(aggregated[2],1,function(x){
   sapply(unlist(x),function(y){
     sapply(pathways_list,function(z){y%in%z})})}),function(x){
       apply(x,1,function(x){sum(x)>0})}))}
-coad_final_data<-cbind(coad_final_data,variables)
+coad_final_data<-cbind(coad_MATH_data,variables)
 
 #Linear Modeling
 fit<-lm(MATH~EpigeneticMod+Transcription_factor+Genome_integrity+RTK_signalling+Cell_cycle+MAPK_signalling+PIK_signalling+TGFB_signalling+Wnt_BCatenin_signalling+Proteolysis+Splicing+HIPPO_signalling+Metabolism+NFE2L+Protein_phosphatase+Ribosome+TOR_signalling,
@@ -81,3 +81,25 @@ fit<-lm(MATH~EpigeneticMod+Transcription_factor+Genome_integrity+RTK_signalling+
 coef<-as.data.frame(summary(fit)$coef)
 sig<-coef[coef$`Pr(>|t|)`<.05,]
 sig<-sig[order(sig$`Pr(>|t|)`),]
+
+#Excluir Silent das pathways
+silent_consequences<-c("3_prime_UTR_variant","5_prime_UTR_variant","downstream_gene_variant","intergenic_variant","intron_variant","non_coding_transcript_exon_variant","synonymous_variant","upstream_gene_variant")
+not_silent<-!coad_interest_data$One_Consequence%in%silent_consequences
+not_silent_aggregated<-aggregate(coad_interest_data$Hugo_Symbol[not_silent],
+                      list(coad_interest_data$Tumor_Sample_Barcode[not_silent]),
+                      function(muts){as.character(muts)})
+not_silent_variables<-{t(sapply(apply(not_silent_aggregated[2],1,function(x){
+  sapply(unlist(x),function(y){
+    sapply(pathways_list,function(z){y%in%z})})}),function(x){
+      apply(x,1,function(x){sum(x)>0})}))}
+not_silent_final<-cbind(coad_MATH_data,not_silent_variables)
+
+#Linear Modeling (not silent)
+not_silent_fit<-lm(MATH~EpigeneticMod+Transcription_factor+Genome_integrity+RTK_signalling+Cell_cycle+MAPK_signalling+PIK_signalling+TGFB_signalling+Wnt_BCatenin_signalling+Proteolysis+Splicing+HIPPO_signalling+Metabolism+NFE2L+Protein_phosphatase+Ribosome+TOR_signalling,
+        data=not_silent_final)
+not_silent_coef<-as.data.frame(summary(not_silent_fit)$coef)
+not_silent_sig<-not_silent_coef[not_silent_coef$`Pr(>|t|)`<.05,]
+not_silent_sig<-not_silent_sig[order(not_silent_sig$`Pr(>|t|)`),]
+
+#Excluir variantes com copy numbers!=0
+coad_copy_numbers<-read.table("gdc/7f01e47a-2f4c-4b91-8db6-e1b6b5595390/COAD.focal_score_by_genes.txt", sep="\t")
