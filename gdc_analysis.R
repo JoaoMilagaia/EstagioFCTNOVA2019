@@ -3,6 +3,7 @@ setwd("~/EstagioFCTNOVA2019")
 coad_patient_data<-read.table("gdc/4060482f-eedf-4959-97f1-f8b6c529c368/nationwidechildrens.org_clinical_patient_coad.txt", sep="\t", header=T)[-c(1,2),]
 coad_TCGA_data<-read.table("gdc/03652df4-6090-4f5a-a2ff-ee28a37f9301/TCGA.COAD.mutect.03652df4-6090-4f5a-a2ff-ee28a37f9301.DR-10.0.somatic.maf", sep="\t", header=T)
 
+#Calcular MATH
 MATH_calculator <- function(interest_data){
   #Calculating MAF for each mutation
   interest_data$MAF<-with(interest_data,t_alt_count/t_depth)
@@ -15,7 +16,7 @@ MATH_calculator <- function(interest_data){
                     MATH<-100*MAD/median(MAF)
                     MATH})}
   
-  names(MATH_data)<-c("Tumor_Sample_Barcode","MATH")
+  names(MATH_data)<-c("Tumor_Sample_Barcode","OUTPUT")
   
   return(MATH_data)
 }
@@ -47,7 +48,6 @@ MATH_calculator <- function(interest_data){
 }
 
 #Genes Lists
-
 pathways_list <- {list(
   Transcription_factor=list("FOXA2","CEBPA","VEZF1","SOX9","PHF6","EIF4A2","WT1","SIN3A","EP300","TBX3","MECOM","RUNX1","TSHZ2","TAF1","CTCF","TSHZ3","GATA3","VHL"),
   EpigeneticMod=list("EZH2","ASXL1","ARID5B","MLL4","KDM6A","KDM5C","SETBP1","NSD1","SETD2","PBRM1","ARID1A","MLL2","MLL3","TET1","TET2","DNMT3A","DNMT3B","DNMT1","HIST1H1C","HIST1H2BD","H3F3C"), #remove "TET1","DNMT3B","DNMT1"??
@@ -69,7 +69,6 @@ pathways_list <- {list(
 )}
 
 #Creating pathway variables
-
 pathway_variables_func <- function(interest_data){
   aggregated <- aggregate(interest_data$Hugo_Symbol,
                           list(interest_data$Tumor_Sample_Barcode),
@@ -86,21 +85,15 @@ pathway_variables_func <- function(interest_data){
   return(final_data)
 }
 
-coad_final_data <- pathway_variables_func(coad_TCGA_data)
-
 #Linear Modeling
-linear_modeling <- function(final_data) {
-  fit <- lm(MATH ~ EpigeneticMod + Transcription_factor + Genome_integrity + RTK_signalling + Cell_cycle + MAPK_signalling + PIK_signalling + TGFB_signalling + Wnt_BCatenin_signalling + Proteolysis + Splicing + HIPPO_signalling + Metabolism + NFE2L + Protein_phosphatase + Ribosome + TOR_signalling,
-            data=final_data)
-  View(fit)
+linear_modeling <- function(final_data, formula = OUTPUT ~ .){
+  fit <- lm(formula, data=final_data)
   coef <- as.data.frame(summary(fit)$coef)
-  View(coef)
   sig <- coef[coef$`Pr(>|t|)`<.05,]
   sig <- sig[order(sig$`Pr(>|t|)`),]
-  View(sig)
+  print(rownames(sig)[-1])
+  print(summary(fit)$adj.r.squared)
 }
-
-linear_modeling(coad_final_data)
 
 #Excluir Silent das pathways
 delete_silent <- function(interest_data){
@@ -109,10 +102,10 @@ delete_silent <- function(interest_data){
   not_silent_final <- pathway_variables_func(not_silent)
   return(not_silent_final)
 }
-not_silent_final <- delete_silent(coad_TCGA_data)
+coad_not_silent <- delete_silent(coad_TCGA_data)
 
-#Linear Modeling (not silent)
-linear_modeling(not_silent_final)
+#Linear Modeling (non-silent)
+linear_modeling(coad_not_silent[,-c(1)])
 
 #Excluir variantes com copy numbers!=0
 #coad_copy_numbers<-read.table("gdc/7f01e47a-2f4c-4b91-8db6-e1b6b5595390/COAD.focal_score_by_genes.txt", sep="\t", header = T)
