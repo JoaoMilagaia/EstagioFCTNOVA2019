@@ -1,14 +1,14 @@
-setwd("~/EstagioFCTNOVA2019")
-#Raw data
-coad_patient_data<-read.table("gdc/4060482f-eedf-4959-97f1-f8b6c529c368/nationwidechildrens.org_clinical_patient_coad.txt", sep="\t", header=T)[-c(1,2),]
-coad_TCGA_data<-read.table("gdc/03652df4-6090-4f5a-a2ff-ee28a37f9301/TCGA.COAD.mutect.03652df4-6090-4f5a-a2ff-ee28a37f9301.DR-10.0.somatic.maf", sep="\t", header=T)
+# setwd("~/EstagioFCTNOVA2019")
+# Raw data
+# coad_patient_data<-read.table("gdc/4060482f-eedf-4959-97f1-f8b6c529c368/nationwidechildrens.org_clinical_patient_coad.txt", sep="\t", header=T)[-c(1,2),]
+# coad_TCGA_data<-read.table("gdc/03652df4-6090-4f5a-a2ff-ee28a37f9301/TCGA.COAD.mutect.03652df4-6090-4f5a-a2ff-ee28a37f9301.DR-10.0.somatic.maf", sep="\t", header=T)
 
-#Calcular MATH
+# Calculate MATH
 MATH_calculator <- function(interest_data){
-  #Calculating MAF for each mutation
+  # Calculating MAF for each mutation
   interest_data$MAF<-with(interest_data,t_alt_count/t_depth)
   
-  #Calculating MATH for each patient
+  # Calculating MATH for each patient
   MATH_data <-{aggregate(interest_data$MAF,
                   list(interest_data$Tumor_Sample_Barcode),
                   function(MAF){
@@ -21,7 +21,7 @@ MATH_calculator <- function(interest_data){
   return(MATH_data)
 }
 
-#Pathways list of lists (Daniel Sobral)
+# Pathways list of lists (Daniel Sobral)
 {
 # pathways_list<-{list(
 #   TF=list("VHL","GATA3","TSHZ3","EP300","CTCF","TAF1","TSHZ2","RUNX1","MECOM","TBX3","SIN3A","WT1","EIF4A2","FOXA1","PHF6","CBFB","SOX9","ELF3","VEZF1","CEBPA","FOXA2"),
@@ -47,7 +47,7 @@ MATH_calculator <- function(interest_data){
 # )}
 }
 
-#Genes Lists
+# Genes Lists
 pathways_list <- {list(
   Transcription_factor=list("FOXA2","CEBPA","VEZF1","SOX9","PHF6","EIF4A2","WT1","SIN3A","EP300","TBX3","MECOM","RUNX1","TSHZ2","TAF1","CTCF","TSHZ3","GATA3","VHL"),
   EpigeneticMod=list("EZH2","ASXL1","ARID5B","MLL4","KDM6A","KDM5C","SETBP1","NSD1","SETD2","PBRM1","ARID1A","MLL2","MLL3","TET1","TET2","DNMT3A","DNMT3B","DNMT1","HIST1H1C","HIST1H2BD","H3F3C"), #remove "TET1","DNMT3B","DNMT1"??
@@ -68,7 +68,7 @@ pathways_list <- {list(
   TOR_signalling=list("STK11","MTOR")
 )}
 
-#Creating pathway variables
+# Creating pathway variables
 pathway_variables_func <- function(interest_data){
   aggregated <- aggregate(interest_data$Hugo_Symbol,
                           list(interest_data$Tumor_Sample_Barcode),
@@ -79,33 +79,42 @@ pathway_variables_func <- function(interest_data){
       sapply(pathways_list,function(z){y%in%z})})}),function(x){
         apply(x,1,function(x){sum(x)>0})}))}
   
-  MATH_data <- MATH_calculator(coad_TCGA_data)
+  MATH_data <- MATH_calculator(interest_data)
   
-  final_data<-cbind(MATH_data,variables)
+  final_data<-cbind(MATH_data,variables)[,-c(1)]
   return(final_data)
 }
 
-#Linear Modeling
-linear_modeling <- function(final_data, formula = OUTPUT ~ .){
-  fit <- lm(formula, data=final_data)
-  coef <- as.data.frame(summary(fit)$coef)
-  sig <- coef[coef$`Pr(>|t|)`<.05,]
-  sig <- sig[order(sig$`Pr(>|t|)`),]
-  print(rownames(sig)[-1])
-  print(summary(fit)$adj.r.squared)
-}
-
-#Excluir Silent das pathways
+# Exclude silent mutations
 delete_silent <- function(interest_data){
   silent_consequences<-c("3_prime_UTR_variant","5_prime_UTR_variant","downstream_gene_variant","intergenic_variant","intron_variant","non_coding_transcript_exon_variant","synonymous_variant","upstream_gene_variant")
   not_silent<-interest_data[!interest_data$One_Consequence%in%silent_consequences,]
   not_silent_final <- pathway_variables_func(not_silent)
   return(not_silent_final)
 }
-coad_not_silent <- delete_silent(coad_TCGA_data)
 
-#Linear Modeling (non-silent)
-linear_modeling(coad_not_silent[,-c(1)])
+# R squared
+r_sqrd<- function(path){
+  interest_data <- read.table(paste("SNV/",path,sep=""), sep ="\t", header = T)
+  final_data <- delete_silent(interest_data)
+  fit <- lm(OUTPUT ~ ., data=final_data)
+  adj_r_sqrd <- (summary(fit)$adj.r.squared)
+  cancer_name <- strsplit(path,"[.]")[[1]][2]
+  return(cbind(cancer_name,adj_r_sqrd))
+}
 
-#Excluir variantes com copy numbers!=0
-#coad_copy_numbers<-read.table("gdc/7f01e47a-2f4c-4b91-8db6-e1b6b5595390/COAD.focal_score_by_genes.txt", sep="\t", header = T)
+# Start to process data
+paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)
+r_data <- data.frame()
+for (path in paths){
+  r_data <- rbind(r_data, r_sqrd(path))
+}
+
+# Linear Modeling
+
+# coef <- as.data.frame(summary(fit)$coef)
+# coef <- coef[-c(1),]
+# sig <- coef[coef$`Pr(>|t|)`<.05,]
+# sig <- sig[order(sig$`Pr(>|t|)`),]
+
+# table <- (sig[,-c(2,3)])
