@@ -1,7 +1,4 @@
-# setwd("~/EstagioFCTNOVA2019")
-# Raw data
-# coad_patient_data<-read.table("gdc/4060482f-eedf-4959-97f1-f8b6c529c368/nationwidechildrens.org_clinical_patient_coad.txt", sep="\t", header=T)[-c(1,2),]
-# coad_TCGA_data<-read.table("gdc/03652df4-6090-4f5a-a2ff-ee28a37f9301/TCGA.COAD.mutect.03652df4-6090-4f5a-a2ff-ee28a37f9301.DR-10.0.somatic.maf", sep="\t", header=T)
+setwd("~/EstagioFCTNOVA2019")
 
 # Calculate MATH
 MATH_calculator <- function(interest_data){
@@ -47,7 +44,7 @@ MATH_calculator <- function(interest_data){
 # )}
 }
 
-# Genes Lists
+# Gene List
 pathways_list <- {list(
   Transcription_factor=list("FOXA2","CEBPA","VEZF1","SOX9","PHF6","EIF4A2","WT1","SIN3A","EP300","TBX3","MECOM","RUNX1","TSHZ2","TAF1","CTCF","TSHZ3","GATA3","VHL"),
   EpigeneticMod=list("EZH2","ASXL1","ARID5B","MLL4","KDM6A","KDM5C","SETBP1","NSD1","SETD2","PBRM1","ARID1A","MLL2","MLL3","TET1","TET2","DNMT3A","DNMT3B","DNMT1","HIST1H1C","HIST1H2BD","H3F3C"), #remove "TET1","DNMT3B","DNMT1"??
@@ -93,28 +90,21 @@ delete_silent <- function(interest_data){
   return(not_silent_final)
 }
 
-# R squared
-r_sqrd<- function(path){
-  interest_data <- read.table(paste("SNV/",path,sep=""), sep ="\t", header = T)
-  final_data <- delete_silent(interest_data)
+# Start to process data
+paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)[1:33]
+r_list <- c()
+for (path in paths){
+  final_data <- delete_silent(read.table(paste("SNV/",path,sep=""), sep ="\t", header = T))
   fit <- lm(OUTPUT ~ ., data=final_data)
   adj_r_sqrd <- (summary(fit)$adj.r.squared)
   cancer_name <- strsplit(path,"[.]")[[1]][2]
-  return(cbind(cancer_name,adj_r_sqrd))
-}
+  r_list[cancer_name] <- adj_r_sqrd
+  coef <- as.data.frame(summary(fit)$coef)
+  coef <- coef[-c(1),]
+  sig <- coef[coef$`Pr(>|t|)`<.05,]
+  sig <- sig[order(sig$`Pr(>|t|)`),]
+  }
 
-# Start to process data
-paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)
-r_data <- data.frame()
-for (path in paths){
-  r_data <- rbind(r_data, r_sqrd(path))
-}
-
-# Linear Modeling
-
-# coef <- as.data.frame(summary(fit)$coef)
-# coef <- coef[-c(1),]
-# sig <- coef[coef$`Pr(>|t|)`<.05,]
-# sig <- sig[order(sig$`Pr(>|t|)`),]
-
-# table <- (sig[,-c(2,3)])
+# Plots
+barplot(r_list, las=2, ylab = "Adjusted R squared")
+barplot(r_list[order(r_list,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
