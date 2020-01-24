@@ -1,19 +1,19 @@
 setwd("~/EstagioFCTNOVA2019")
 
 # Calculate MATH
-MATH_calculator <- function(interest_data){
+MATH_calculator <- function(interest_data){#interest_data is the data.frame read from the raw file
   # Calculating MAF for each mutation
   interest_data$MAF<-with(interest_data,t_alt_count/t_depth)
   
   # Calculating MATH for each patient
-  MATH_data <-{aggregate(interest_data$MAF,
-                  list(interest_data$Tumor_Sample_Barcode),
-                  function(MAF){
+  MATH_data <-{aggregate(interest_data$MAF, # Grouping the MAF values
+                  list(interest_data$Tumor_Sample_Barcode), # Per patient
+                  function(MAF){ # And calculating each patient's MATH from it's MAFs
                     MAD<-median(abs(MAF-median(MAF)))*1.4826
                     MATH<-100*MAD/median(MAF)
                     MATH})}
   
-  names(MATH_data)<-c("Tumor_Sample_Barcode","OUTPUT")
+  names(MATH_data)<-c("Tumor_Sample_Barcode","OUTPUT") # The output here is MATH values
   
   return(MATH_data)
 }
@@ -66,14 +66,14 @@ pathways_list <- {list(
 )}
 
 # Creating pathway variables
-pathway_variables_func <- function(interest_data){
-  aggregated <- aggregate(interest_data$Hugo_Symbol,
-                          list(interest_data$Tumor_Sample_Barcode),
+pathway_variables_func <- function(interest_data, gene_group){
+  aggregated <- aggregate(interest_data$Hugo_Symbol, # Aggregate the mutated genes
+                          list(interest_data$Tumor_Sample_Barcode), #
                           function(muts){as.character(muts)})
   
   variables <- {t(sapply(apply(aggregated[2],1,function(x){
     sapply(unlist(x),function(y){
-      sapply(pathways_list,function(z){y%in%z})})}),function(x){
+      sapply(gene_group,function(z){y%in%z})})}),function(x){
         apply(x,1,function(x){sum(x)>0})}))}
   
   MATH_data <- MATH_calculator(interest_data)
@@ -83,28 +83,98 @@ pathway_variables_func <- function(interest_data){
 }
 
 # Exclude silent mutations
-delete_silent <- function(interest_data){
-  silent_consequences<-c("3_prime_UTR_variant","5_prime_UTR_variant","downstream_gene_variant","intergenic_variant","intron_variant","non_coding_transcript_exon_variant","synonymous_variant","upstream_gene_variant")
+delete_silent <- function(interest_data, gene_group){
+  silent_consequences<-c("3_prime_UTR_variant","5_prime_UTR_variant","downstream_gene_variant","intergenic_variant",
+                         "intron_variant","non_coding_transcript_exon_variant","synonymous_variant","upstream_gene_variant")
   not_silent<-interest_data[!interest_data$One_Consequence%in%silent_consequences,]
-  not_silent_final <- pathway_variables_func(not_silent)
+  not_silent_final <- pathway_variables_func(not_silent, gene_group)
   return(not_silent_final)
 }
 
-# Start to process data
+# SNV
 paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)[1:33]
-r_list <- c()
-for (path in paths){
-  final_data <- delete_silent(read.table(paste("SNV/",path,sep=""), sep ="\t", header = T))
-  fit <- lm(OUTPUT ~ ., data=final_data)
-  adj_r_sqrd <- (summary(fit)$adj.r.squared)
-  cancer_name <- strsplit(path,"[.]")[[1]][2]
-  r_list[cancer_name] <- adj_r_sqrd
-  coef <- as.data.frame(summary(fit)$coef)
-  coef <- coef[-c(1),]
-  sig <- coef[coef$`Pr(>|t|)`<.05,]
-  sig <- sig[order(sig$`Pr(>|t|)`),]
+# Smaller sample to test
+# paths <- paths[1:2]
+
+cancer_names <- character(length(paths))
+for (i in 1:length(paths)){
+  cancer_names[i] <- strsplit(paths[i],"[.]")[[1]][2]
+}
+
+# SNV_data<- list()
+# for (i in 1:length(paths)){
+#   SNV_data[[i]] <- read.table(paste("SNV/",paths[i],sep=""),sep="\t",header=T,quote="")
+# }
+# names(SNV_data) <- cancer_names
+# save(x=SNV_data, file = "SNV_data.RData")
+load("SNV_data.RData")
+
+# Process data
+process <- function(data, gene_group){
+  processed_data <- list()
+  for (i in 1:length(data)){
+    processed_data[[i]] <- delete_silent(data[[i]], gene_group)
+  }
+  names(processed_data) <- cancer_names
+  return(processed_data)
+}
+
+# R_list
+adj_r_sqrd <- function(processed_data){
+  r_list <- numeric(length(processed_data)); names(r_list) <- cancer_names
+  for (i in 1:length(processed_data)){
+    fit <- lm(OUTPUT ~ ., data=processed_data[[i]])
+    adj_r_sqrd <- (summary(fit)$adj.r.squared)
+    r_list[i] <- adj_r_sqrd
+  }
+  return(r_list)
   }
 
+# Coef_Matrix
+coef <- function(processed_data){
+  coef_matrix <- matrix(NA, nrow = length(paths), ncol = length(processed_data[[1]])-1, dimnames = list(cancer_names,
+                                                                                                  names(processed_data[[1]])[-1]))
+  for (i in 1:length(processed_data)){
+    fit <- lm(OUTPUT ~ ., data=processed_data[[i]])
+    coef <- as.data.frame(summary(fit)$coef)
+    coef <- coef[-c(1),]
+    sig <- coef[coef$`Pr(>|t|)`<.05,]
+    if (nrow(sig) > 0){
+      for (j in 1:nrow(sig)){
+        rname <- row.names(sig)[j]
+        rname <- substr(rname,1,nchar(rname)-4)
+        coef_matrix[i,rname]<-sig[j,1]
+      }
+    }
+  }
+  return(coef_matrix)
+}
+
 # Plots
-barplot(r_list, las=2, ylab = "Adjusted R squared")
-barplot(r_list[order(r_list,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
+plotting <- function(r, coef){
+  barplot(r, las=2, ylab = "Adjusted R squared")
+  barplot(r[order(r,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
+  heatmap(coef, Rowv=NA, Colv=NA, margins = c(10,10))
+  # heatmap.2(coef, Rowv=NA, Colv=NA, margins = c(11,11))
+}
+
+# Results
+# SNV_pathways <- process(SNV_data, pathways_list)
+# save(x=SNV_pathways, file = "SNV_pathways.RData")
+load("SNV_pathways.RData")
+SNV_pathways_r <- adj_r_sqrd(SNV_pathways)
+SNV_pathways_coef <- coef(SNV_pathways)
+plotting(SNV_pathways_r, SNV_pathways_coef)
+
+# Different grouping of genes
+load("geneSets.Rdata")
+for (i in 1:length(geneSets)){
+  geneSets[[i]]<-as.list(geneSets[[i]][1][,1])
+}
+
+# SNV_geneSets <- process(SNV_data, geneSets)
+# save(x=SNV_geneSets, file = "SNV_geneSets.RData")
+load("SNV_geneSets.RData")
+# SNV_geneSets_r <- adj_r_sqrd(SNV_geneSets)
+# SNV_geneSets_coef <- coef(SNV_geneSets)
+# plotting(SNV_geneSets_r, SNV_geneSets_coef)
