@@ -151,20 +151,29 @@ coef <- function(processed_data){
 }
 
 # Plots
+library(gplots)
+library(RColorBrewer)
+my_palette <- colorRampPalette(c("yellow", "red"))(n = 299)
+
 plotting <- function(r, coef){
   barplot(r, las=2, ylab = "Adjusted R squared")
   barplot(r[order(r,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
-  heatmap(coef, Rowv=NA, Colv=NA, margins = c(10,10))
-  # heatmap.2(coef, Rowv=NA, Colv=NA, margins = c(11,11))
+  heatmap(coef, Rowv=NA, Colv=NA, margins = c(10,5))
+  heatmap.2(coef,
+            margins =c(11,5),     # widens margins around plot
+            col=my_palette,       # use color palette defined earlier
+            dendrogram="none",
+            Colv="NA",
+            Rowv = "NA")
 }
 
 # Results
 # SNV_pathways <- process(SNV_data, pathways_list)
 # save(x=SNV_pathways, file = "SNV_pathways.RData")
 load("SNV_pathways.RData")
-SNV_pathways_r <- adj_r_sqrd(SNV_pathways)
-SNV_pathways_coef <- coef(SNV_pathways)
-plotting(SNV_pathways_r, SNV_pathways_coef)
+# SNV_pathways_r <- adj_r_sqrd(SNV_pathways)
+# SNV_pathways_coef <- coef(SNV_pathways)
+# plotting(SNV_pathways_r, SNV_pathways_coef)
 
 # Different grouping of genes
 load("geneSets.Rdata")
