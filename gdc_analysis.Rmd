@@ -1,5 +1,16 @@
-setwd("~/EstagioFCTNOVA2019")
+---
+title: "gdc_analysis"
+output: html_document
+---
 
+```{r}
+setwd("~/EstagioFCTNOVA2019")
+```
+
+# Initial functions
+## MATH, binary variables and deleting silent mutations
+
+```{r}
 # Calculate MATH
 MATH_calculator <- function(interest_data){#interest_data is the data.frame read from the raw text file
   # Calculating MAF for each mutation
@@ -94,8 +105,11 @@ delete_silent <- function(interest_data, gene_group){
   not_silent_final <- pathway_variables_func(not_silent, gene_group)
   return(not_silent_final)
 }
+```
 
-# SNV
+# SNV data
+
+```{r}
 paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)[1:33]
 # Smaller sample to test
 # paths <- paths[1:2]
@@ -112,7 +126,12 @@ for (i in 1:length(paths)){
 # names(SNV_data) <- cancer_names
 # save(x=SNV_data, file = "SNV_data.RData")
 load("SNV_data.RData")
+```
 
+# Processing
+## Adjusted R squared, Coefficient matrix and pheatmap
+
+```{r}
 # Process data
 process <- function(data, gene_group){
   processed_data <- list()
@@ -135,7 +154,7 @@ adj_r_sqrd <- function(processed_data){
   }
 
 # Coef_Matrix
-coef <- function(processed_data){
+coef_matrix <- function(processed_data){
   coef_matrix <- matrix(NA, nrow = length(paths), ncol = length(processed_data[[1]])-1, dimnames = list(cancer_names,
                                                                                                   names(processed_data[[1]])[-1]))
   for (i in 1:length(processed_data)){
@@ -155,27 +174,28 @@ coef <- function(processed_data){
 }
 
 # Plots
-library(gplots)
-library(RColorBrewer)
-my_palette<- rev(brewer.pal(11,"RdYlBu")) # Uneven so that values close to zero are the same color
+library(gplots) # bluered
+library(pheatmap)
 
 plotting <- function(processed_data){
-  r<-adj_r_sqrd(processed_data)
-  coef<-coef(processed_data)
-  barplot(r[order(r,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
-  heatmap.2(coef,
-            density.info="none",  # turns off density plot inside color legend
-            trace="none",         # turns off trace lines inside the heat map
-            margins =c(10,5),     # widens margins around plot
-            col=my_palette,       # use color palette defined earlier
-            dendrogram="none",
-            Colv="NA",
-            Rowv = "NA",
-            scale = "row",
-            srtCol = 45)
+  Adjusted_R_Squared<-adj_r_sqrd(processed_data)
+  CoefMatrix<-coef_matrix(processed_data)
+  pheatmap(CoefMatrix,
+           cluster_rows = FALSE,
+           cluster_cols = FALSE,
+           color = bluered(9),
+           annotation_row = as.data.frame(Adjusted_R_Squared),
+           angle_col = 315,
+           breaks = c(seq(min(CoefMatrix,na.rm = T),0,length=5),seq(0.000001,max(CoefMatrix,na.rm = T),length=5)),
+           na_col = 0
+           )
 }
+```
 
 # Results
+## SNV-pathways vs SNV-geneSets
+
+```{r}
 # SNV_pathways <- process(SNV_data, pathways_list)
 # save(x=SNV_pathways, file = "SNV_pathways.RData")
 load("SNV_pathways.RData")
@@ -193,3 +213,47 @@ for (i in 1:length(geneSets)){
 load("SNV_geneSets.RData")
 
 plotting(SNV_geneSets)
+```
+
+# Forward Stepwise Selection
+
+```{r}
+library(leaps)
+test <- SNV_pathways$UCS
+nrows <- nrow(test) # Total rows
+two_thirds <- (nrows*2)%/%3 # About 2/3 of the data, rounded down
+ncols <- ncol(test)-1 # Number of predictors
+regfit.fwd = regsubsets(OUTPUT~., data=test, nvmax=ncols, method = "forward")
+plot(regfit.fwd,scale="Cp")
+
+# Model selection using a validation set
+
+set.seed(1)
+train = sample(seq(nrows),two_thirds,replace=F) # 2/3 of the data for training the model
+regfit.fwd=regsubsets(OUTPUT~.,data=test[train,],nvmax = ncols,method = "forward")
+
+# Predictions on observations not used for training
+val.errors=rep(NA,ncols) # ncols: number of variables so, number of subset models
+x.test=model.matrix(OUTPUT~.,data=test[-train,]) # Validation data set
+for(i in 1:ncols){
+  coefi=coefficients(regfit.fwd,id=i) # i is model size, coefi vector has the subset of variables used in that model
+  pred=x.test[,names(coefi)]%*%coefi # Predicted response multiplying each used variable by it's coef (matrix multiplication)
+  val.errors[i]=mean((test$OUTPUT[-train]-pred)^2) # mean squared error
+}
+plot(sqrt(val.errors),ylab="Root MSE",ylim = c(15,18),pch=19,type="b") # Validation error
+points(sqrt(regfit.fwd$rss[-1]/two_thirds),col="blue",pch=19,type = "b") # Root mean Residual sum of squares
+legend("topright",legend=c("Training","Validation"),col=c("blue","black"),pch=19)
+```
+
+# Method for regsubsets
+
+```{r}
+predict.regsubsets <- function(object,newdata,id,...){
+  # object: regsubset object; newdata; id: id of the model
+  form=as.formula(object$call[[2]]) # Extract formula from object
+  mat=model.matrix(form,newdata) # Validation data set
+  coefi=coefficients(object,id=id)
+  mat[,names(coefi)]%*%coefi
+}
+```
+
