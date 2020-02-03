@@ -3,28 +3,61 @@ title: "gdc_analysis"
 output: html_document
 ---
 
-```{r}
+```{r setup}
 setwd("~/EstagioFCTNOVA2019")
 ```
 
-# Initial functions
-## MATH, binary variables and deleting silent mutations
+# SNV data
+
+The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, I'm using the "MANIFEST.txt" to get all the file paths. This file also includes the annotations file paths but I'm only interested in the data tables (.maf.gz files).
+
+```{r paths}
+paths <- as.character(read.table("SNV/MANIFEST.txt", header = T)$filename)
+paths <- paths[substr(paths,nchar(paths)-1,nchar(paths))=="gz"]
+paths <- paste("SNV/", paths, sep = "")
+
+paths[1] # Since each path has this structure:
+```
+```{r cancer names}
+# We do the following to get the cancer names:
+cancer_names <- unname(sapply(sapply(paths,strsplit,"[.]"),"[[",2))
+                            # Splitting each path by "."
+                    # Getting the second element of each split outcome
+              # Unname for simplicity sake
+
+cancer_names # Resulting in:
+```
+
+Having the file paths and cancer names we can finnaly create a list of data frames, each for each cancer.
+
+```{r SNV_data}
+# SNV_data <- lapply(paths, read.table, sep="\t", header=T, quote="")
+# names(SNV_data) <- cancer_names
+# save(x=SNV_data, file = "SNV_data.RData")
+# load("SNV_data.RData")
+```
+
+Since this process takes a while, I saved the SNV_data object in a file that could be loaded when needed.
+
+# First approach
+
+
 
 ```{r}
 # Calculate MATH
-MATH_calculator <- function(interest_data){#interest_data is the data.frame read from the raw text file
+MATH_calculator <- function(interest_data){ # interest_data is the data.frame read from the raw text file
   # Calculating MAF for each mutation
   interest_data$MAF<-with(interest_data,t_alt_count/t_depth)
   
   # Calculating MATH for each patient
-  MATH_data <-{aggregate(interest_data$MAF, # Grouping the MAF values
+  MATH_data <-aggregate(interest_data$MAF, # Grouping the MAF values
                   list(interest_data$Tumor_Sample_Barcode), # Per patient
                   function(MAF){ # And calculating each patient's MATH from it's MAFs
                     MAD<-median(abs(MAF-median(MAF)))*1.4826
                     MATH<-100*MAD/median(MAF)
-                    return(MATH)})}
+                    return(MATH)})
   
-  names(MATH_data)<-c("Tumor_Sample_Barcode","OUTPUT") # The output here is MATH values
+  names(MATH_data)<-c("Tumor_Sample_Barcode","OUTPUT") # The OUTPUT here is MATH values
   
   return(MATH_data)
 }
@@ -86,10 +119,10 @@ pathway_variables_func <- function(interest_data, gene_group){
                           list(interest_data$Tumor_Sample_Barcode),
                           function(muts){as.character(muts)})
   
-  variables <- {t(sapply(apply(aggregated[2],1,function(x){
+  variables <- t(sapply(apply(aggregated[2],1,function(x){
     sapply(unlist(x),function(y){
       sapply(gene_group,function(z){y%in%z})})}),function(x){
-        apply(x,1,function(x){sum(x)>0})}))}
+        apply(x,1,function(x){sum(x)>0})}))
   
   MATH_data <- MATH_calculator(interest_data)
   
@@ -107,29 +140,7 @@ delete_silent <- function(interest_data, gene_group){
 }
 ```
 
-# SNV data
-
-```{r}
-paths <- sapply(read.table("SNV/MANIFEST.txt", header = T)[2],as.character)[1:33]
-# Smaller sample to test
-# paths <- paths[1:2]
-
-cancer_names <- character(length(paths))
-for (i in 1:length(paths)){
-  cancer_names[i] <- strsplit(paths[i],"[.]")[[1]][2]
-}
-
-# SNV_data<- list()
-# for (i in 1:length(paths)){
-#   SNV_data[[i]] <- read.table(paste("SNV/",paths[i],sep=""),sep="\t",header=T,quote="")
-# }
-# names(SNV_data) <- cancer_names
-# save(x=SNV_data, file = "SNV_data.RData")
-load("SNV_data.RData")
-```
-
-# Processing
-## Adjusted R squared, Coefficient matrix and pheatmap
+# Adjusted R squared, Coefficient matrix and pheatmap
 
 ```{r}
 # Process data
@@ -214,46 +225,3 @@ load("SNV_geneSets.RData")
 
 plotting(SNV_geneSets)
 ```
-
-# Forward Stepwise Selection
-
-```{r}
-library(leaps)
-test <- SNV_pathways$UCS
-nrows <- nrow(test) # Total rows
-two_thirds <- (nrows*2)%/%3 # About 2/3 of the data, rounded down
-ncols <- ncol(test)-1 # Number of predictors
-regfit.fwd = regsubsets(OUTPUT~., data=test, nvmax=ncols, method = "forward")
-plot(regfit.fwd,scale="Cp")
-
-# Model selection using a validation set
-
-set.seed(1)
-train = sample(seq(nrows),two_thirds,replace=F) # 2/3 of the data for training the model
-regfit.fwd=regsubsets(OUTPUT~.,data=test[train,],nvmax = ncols,method = "forward")
-
-# Predictions on observations not used for training
-val.errors=rep(NA,ncols) # ncols: number of variables so, number of subset models
-x.test=model.matrix(OUTPUT~.,data=test[-train,]) # Validation data set
-for(i in 1:ncols){
-  coefi=coefficients(regfit.fwd,id=i) # i is model size, coefi vector has the subset of variables used in that model
-  pred=x.test[,names(coefi)]%*%coefi # Predicted response multiplying each used variable by it's coef (matrix multiplication)
-  val.errors[i]=mean((test$OUTPUT[-train]-pred)^2) # mean squared error
-}
-plot(sqrt(val.errors),ylab="Root MSE",ylim = c(15,18),pch=19,type="b") # Validation error
-points(sqrt(regfit.fwd$rss[-1]/two_thirds),col="blue",pch=19,type = "b") # Root mean Residual sum of squares
-legend("topright",legend=c("Training","Validation"),col=c("blue","black"),pch=19)
-```
-
-# Method for regsubsets
-
-```{r}
-predict.regsubsets <- function(object,newdata,id,...){
-  # object: regsubset object; newdata; id: id of the model
-  form=as.formula(object$call[[2]]) # Extract formula from object
-  mat=model.matrix(form,newdata) # Validation data set
-  coefi=coefficients(object,id=id)
-  mat[,names(coefi)]%*%coefi
-}
-```
-

@@ -156,23 +156,20 @@ coef <- function(processed_data){
 
 # Plots
 library(gplots)
-library(RColorBrewer)
-my_palette<- rev(brewer.pal(11,"RdYlBu")) # Uneven so that values close to zero are the same color
+library(pheatmap)
 
 plotting <- function(processed_data){
-  r<-adj_r_sqrd(processed_data)
-  coef<-coef(processed_data)
-  barplot(r[order(r,decreasing = TRUE)], las=2, ylab = "Adjusted R squared")
-  heatmap.2(coef,
-            density.info="none",  # turns off density plot inside color legend
-            trace="none",         # turns off trace lines inside the heat map
-            margins =c(10,5),     # widens margins around plot
-            col=my_palette,       # use color palette defined earlier
-            dendrogram="none",
-            Colv="NA",
-            Rowv = "NA",
-            scale = "row",
-            srtCol = 45)
+  Adjusted_R_Squared<-adj_r_sqrd(processed_data)
+  CoefMatrix<-coef(processed_data)
+  pheatmap(CoefMatrix,
+           cluster_rows = FALSE,
+           cluster_cols = FALSE,
+           color = bluered(9),
+           annotation_row = as.data.frame(Adjusted_R_Squared),
+           angle_col = 315,
+           breaks = c(seq(min(CoefMatrix,na.rm = T),0,length=5),seq(0.000001,max(CoefMatrix,na.rm = T),length=5)),
+           na_col = 0
+           )
 }
 
 # Results
@@ -193,3 +190,34 @@ for (i in 1:length(geneSets)){
 load("SNV_geneSets.RData")
 
 plotting(SNV_geneSets)
+
+# Forward Stepwise Selection
+test <- SNV_pathways$COAD
+regfit.fwd = regsubsets(OUTPUT~., data=test, nvmax=17, method = "forward")
+plot(regfit.fwd,scale="Cp")
+
+# Model selection using a validation set
+dim(test)
+set.seed(1)
+train = sample(seq(399),270,replace=F) # 399 rows total, 270 is about 2/3 of the data
+regfit.fwd=regsubsets(OUTPUT~.,data=test[train,],nvmax = 17,method = "forward")
+
+# Predictions on observations not used for training
+val.errors=rep(NA,17) # 17 variables so, 17 subset models
+x.test=model.matrix(OUTPUT~.,data=test[-train,]) # Validation data set
+for(i in 1:17){
+  coefi=coefficients(regfit.fwd,id=i) # i is model size, coefi vector has the subset of variables used in that model
+  pred=x.test[,names(coefi)]%*%coefi # Predicted response multiplying each used variable by it's coef (matrix multiplication)
+  val.errors[i]=mean((test$OUTPUT[-train]-pred)^2) # mean squared error
+}
+plot(sqrt(val.errors),ylab="Root MSE",pch=19,type="b") # Validation error
+points(sqrt(regfit.fwd$rss[-1]/270),col="blue",pch=19,type = "b")
+legend("topright",legend=c("Training","Validation"),col=c("blue","black"),pch=19)
+
+predict.regsubsets=fuction(object,newdata,id,...){
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form,newdata)
+  coefi=coefficients(object,id=id)
+  mat[,names(coefi)]%*%coefi
+}
+# More in gdc_analysis.Rmd
