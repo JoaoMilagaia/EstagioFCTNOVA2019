@@ -9,7 +9,7 @@ setwd("~/EstagioFCTNOVA2019")
 
 # SNV data
 
-The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, I'm using the "MANIFEST.txt" to get all the file paths. This file also includes the annotations file paths but I'm only interested in the data tables (.maf.gz files).
+The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, I'm using the "MANIFEST.txt" to get all the file paths. This file also includes the annotations file paths but I'm only interested in the data tables (".maf.gz" files).
 
 ```{r paths}
 paths <- as.character(read.table("SNV/MANIFEST.txt", header = T)$filename)
@@ -41,7 +41,15 @@ Since this process takes a while, I saved the SNV_data object in a file that cou
 
 # First approach
 
+Since we are studying Intra Tumoral Heterogeneity, we'll have to calculate a unit of it, MATH. For this I'll create a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
 
+To calculate the MATH value of each tumor, one must calculate the MAF values for all the mutations in the tumor, like so:
+$$MAF=\frac{t_alt_count}{t_depth}$$
+
+Next, we calculate the MAD value of the tumor:
+$$MAD=\frac{1.4826}{n} \sum_{i=1}^{n}\left( \left\lvert{ MAF_{i}-\frac{1}{n} \sum_{i=1}^{n}(MAF_{i}) }\right\rvert \right)$$
+And finally, the MATH value:
+$$MATH=100\frac{MAD}{\frac{1}{n} \sum_{i=1}^{n}(MAF_{i})}$$
 
 ```{r}
 # Calculate MATH
@@ -50,9 +58,9 @@ MATH_calculator <- function(interest_data){ # interest_data is the data.frame re
   interest_data$MAF<-with(interest_data,t_alt_count/t_depth)
   
   # Calculating MATH for each patient
-  MATH_data <-aggregate(interest_data$MAF, # Grouping the MAF values
-                  list(interest_data$Tumor_Sample_Barcode), # Per patient
-                  function(MAF){ # And calculating each patient's MATH from it's MAFs
+  MATH_data <-aggregate(interest_data$MAF,                  # Grouping the MAF values
+                  list(interest_data$Tumor_Sample_Barcode), # per tumor sample
+                  function(MAF){                            # and calculating each tumor's MATH
                     MAD<-median(abs(MAF-median(MAF)))*1.4826
                     MATH<-100*MAD/median(MAF)
                     return(MATH)})
