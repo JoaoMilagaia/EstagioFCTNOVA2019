@@ -5,7 +5,7 @@ output: html_document
 ***
 # SNV data
 
-The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, I'm using the "MANIFEST.txt" file to get all the file paths. This file also includes the annotations' file paths but I'm only interested in the data tables (".maf.gz" files).
+The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, the "MANIFEST.txt" file is used to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
 ```{r paths}
 paths <- as.character(read.table("SNV/MANIFEST.txt", header = TRUE)$filename)
 paths <- paths[substr(paths, nchar(paths) - 1, nchar(paths)) == "gz"]
@@ -14,33 +14,33 @@ paths <- paste("SNV/", paths, sep = "")
 paths[1] # Since each path has this structure:
 ```
 ```{r cancer types}
-# We do the following to get the cancer types:
+# The cancer types are acquired this way:
 cancer_types <- unname(sapply(sapply(paths, strsplit, "[.]"), "[[", 2))
                             # Splitting each path by "."
                     # Getting the second element of each split outcome
-              # Unname for simplicity sake
+              # Unnaming for simplicity sake
 
 cancer_types # Resulting in:
 ```
 
-Having the file paths and cancer types we can finnaly create a list of data frames, each for each cancer.
+Having the file paths and cancer types, it's time to create a list of data frames, each for each cancer.
 ```{r SNV_data}
 # SNV_data <- lapply(paths, read.table, sep = "\t", header = TRUE, quote = "")
 # names(SNV_data) <- cancer_types
 # save(x = SNV_data, file = "SNV_data.RData")
 # load("SNV_data.RData")
 ```
-Since this process takes a while, I saved the SNV_data object in a file that could be loaded when needed.
+Since this process takes a while, the SNV_data object is saved in a file that could be loaded when needed.
 
 # First approach
 
-Since we are studying Intra Tumoral Heterogeneity, we'll have to calculate a unit of it, such as mutant-allele tumor heterogeneity (MATH). For this I'll create a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
+To study Intra Tumoral Heterogeneity, it is calculated a unit of it, such as mutant-allele tumor heterogeneity (MATH). For this it is created a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
 
 To calculate the MATH value of each tumor, one must calculate the mutant-allele fraction (MAF) values of all the somatic mutations in the tumor, like so:
 $$MAF = \frac{t\_alt\_count}{t\_depth}$$
 Where t_alt_count represents the number of mutated alleles and t_depth is the total amount of alleles.
 
-Next, we calculate the median absolute deviation (MAD) value of the tumor:
+Next, it is calculated the median absolute deviation (MAD) value of the tumor:
 $$MAD = \frac{1.4826}{n} \sum_{i = 1}^{n} \left( \left\lvert{ MAF_{i} - \frac{1}{n} \sum_{i = 1}^{n} (MAF_{i}) }\right\rvert \right)$$
 Which is multiplied by a factor of 1.4826 "so that the expected MAD of a normally distributed variable is equal to its standard deviation".
 
@@ -65,32 +65,32 @@ MATH_calculator <- function(cancer_data){
 ```
 Where the OUTPUT corresponds to MATH values.
 
-Given the number of genes, it is convenient to sort them by groups that make sense from a biological point of view in order to do a linear model that explains the variation of ITH. Here we use a list of 17 pathways with a total of 101 genes.
+Given the number of genes, it is convenient to sort them by groups that make sense from a biological point of view in order to do a linear model that explains the variation of ITH. Here, a list of 17 pathways with a total of 101 genes is used.
 ```{r Gene List}
 pathways_list <- list(
-  Transcription_factor = list("FOXA2", "CEBPA", "VEZF1", "SOX9", "PHF6", "EIF4A2", "WT1", "SIN3A", "EP300", "TBX3", "MECOM", "RUNX1", "TSHZ2", "TAF1", "CTCF", "TSHZ3", "GATA3", "VHL"),
-  EpigeneticMod = list("EZH2", "ASXL1", "ARID5B", "MLL4", "KDM6A", "KDM5C", "SETBP1", "NSD1", "SETD2", "PBRM1", "ARID1A", "MLL2", "MLL3", "TET1", "TET2", "DNMT3A", "DNMT3B", "DNMT1", "HIST1H1C", "HIST1H2BD", "H3F3C"), # remove "TET1", "DNMT3B", "DNMT1"??
-  Genome_integrity = list("ERCC2", "CHEK2", "SMC3", "SMC1A", "BRCA1", "BAP1", "STAG2", "ATR", "BRCA2", "ATRX", "ATM", "TP53"),
-  RTK_signalling = list("FGFR3", "KIT", "FGFR2", "EPHB6", "PDGFRA", "ERBB4", "EPHA3", "FLT3", "EGFR"),
-  Cell_cycle = list("CDKN2C", "CDKN1A", "CDK12", "RB1", "CDKN2A"),
-  MAPK_signalling = list("MAPK8IP1", "BRAF", "MAP3K1", "NF1", "KRAS"),
-  PIK_signalling = list("AKT1", "PIK3CG", "TLR4", "PIK3R1", "PTEN", "PIK3CA"),
-  TGFB_signalling = list("ACVR2A", "SMAD2", "ACVR1B", "TGFBR2", "SMAD4"),
-  Wnt_BCatenin_signalling = list("TBL1XR1", "AXIN2", "CTNNB1", "APC"),
-  Proteolysis = list("SPOP", "KEAP1", "FBXW7"),
-  Splicing = list("PCBP1", "SF3B1"),
-  HIPPO_signalling = list("CDH1"),
-  Metabolism = list("IDH2", "IDH1"),
-  NFE2L = list("NFE2L3", "NFE2L2"),
-  Protein_phosphatase = list("PTPN11", "PPP2R1A"),
-  Ribosome = list("RPL5", "RPL22"),
-  TOR_signalling = list("STK11", "MTOR")
+  Transcription_factor = c("FOXA2", "CEBPA", "VEZF1", "SOX9", "PHF6", "EIF4A2", "WT1", "SIN3A", "EP300", "TBX3", "MECOM", "RUNX1", "TSHZ2", "TAF1", "CTCF", "TSHZ3", "GATA3", "VHL"),
+  EpigeneticMod = c("EZH2", "ASXL1", "ARID5B", "MLL4", "KDM6A", "KDM5C", "SETBP1", "NSD1", "SETD2", "PBRM1", "ARID1A", "MLL2", "MLL3", "TET1", "TET2", "DNMT3A", "DNMT3B", "DNMT1", "HIST1H1C", "HIST1H2BD", "H3F3C"), # remove "TET1", "DNMT3B", "DNMT1"??
+  Genome_integrity = c("ERCC2", "CHEK2", "SMC3", "SMC1A", "BRCA1", "BAP1", "STAG2", "ATR", "BRCA2", "ATRX", "ATM", "TP53"),
+  RTK_signalling = c("FGFR3", "KIT", "FGFR2", "EPHB6", "PDGFRA", "ERBB4", "EPHA3", "FLT3", "EGFR"),
+  Cell_cycle = c("CDKN2C", "CDKN1A", "CDK12", "RB1", "CDKN2A"),
+  MAPK_signalling = c("MAPK8IP1", "BRAF", "MAP3K1", "NF1", "KRAS"),
+  PIK_signalling = c("AKT1", "PIK3CG", "TLR4", "PIK3R1", "PTEN", "PIK3CA"),
+  TGFB_signalling = c("ACVR2A", "SMAD2", "ACVR1B", "TGFBR2", "SMAD4"),
+  Wnt_BCatenin_signalling = c("TBL1XR1", "AXIN2", "CTNNB1", "APC"),
+  Proteolysis = c("SPOP", "KEAP1", "FBXW7"),
+  Splicing = c("PCBP1", "SF3B1"),
+  HIPPO_signalling = c("CDH1"),
+  Metabolism = c("IDH2", "IDH1"),
+  NFE2L = c("NFE2L3", "NFE2L2"),
+  Protein_phosphatase = c("PTPN11", "PPP2R1A"),
+  Ribosome = c("RPL5", "RPL22"),
+  TOR_signalling = c("STK11", "MTOR")
   )
 ```
 
-For the linear model, the response (y) will be the measure of ITH, MATH and the predictors (x) will be the groups of genes as binary variables, taking the value of 1 if there is a mutation in at least one of the genes in the group and 0 if not. This way we can model the variance of ITH and find which group of genes is more correlated with it.
+For the linear model, the measure of ITH (MATH) will be the response (y) and the predictors (x) will be the groups of genes as binary variables, taking the value of 1 if there is a mutation in at least one of the genes in the group and 0 if not. This way it is possible to model the variance of ITH and find which group of genes is more correlated with it.
 
-To this end, I'll need a function that:
+To do this, it is developed a function that:
 1. Groups the mutated genes per tumor
 2. Checks if each of those genes is in each gene group
 3. For each tumor, informs if there is at least one mutated gene in each gene group 
@@ -131,7 +131,7 @@ delete_silent <- function(cancer_data, gene_group){
 
 # Final functions
 
-Now that I've developed the functions to process each individual cancer data frame, it's time to apply them to all of them.
+Now that the functions to process each individual cancer data frame are developed, it's time to apply them to the list of data frames with the following function.
 ```{r Process data}
 process <- function(data, gene_group){
   processed_data <- list()
@@ -141,7 +141,7 @@ process <- function(data, gene_group){
   return(processed_data)
 }
 ```
-Next we'll calculate the adjusted R squared for each processed data frame's linear model as well as all of the significant coefficients in order to efficiently see and compare our results.
+The next step is to calculate the adjusted R squared for each processed data frame's linear model as well as all of the significant coefficients in order to efficiently see and compare the results.
 ```{r Adjusted R squared}
 adj_r_sqrd <- function(processed_data){
   r_list <- numeric(length(processed_data)); names(r_list) <- cancer_types
@@ -166,7 +166,8 @@ coef_matrix <- function(processed_data){
     if (nrow(sig) > 0){
       for (j in 1:nrow(sig)){
         group_name <- row.names(sig)[j]
-        group_name <- substr(group_name, 1, nchar(group_name) - 4)
+        group_name <- gsub("TRUE", "", group_name)
+        group_name <- gsub("FALSE", "", group_name)
         coef_matrix[i, group_name] <- sig[j, 1]
       }
     }
@@ -196,7 +197,7 @@ plotting <- function(processed_data){
 
 # Results
 
-let's take a look at our results:
+Using the pathways grouping results in:
 ```{r SNV_pathways}
 # SNV_pathways <- process(SNV_data, pathways_list)
 # save(x = SNV_pathways, file = "SNV_pathways.RData")
@@ -204,9 +205,10 @@ load("SNV_pathways.RData")
 
 plotting(SNV_pathways)
 ```
-Here we can see that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
 
-Let's do the same but using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
+Here it is visible that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
+
+However, the results look different using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
 ```{r SNV_geneSets}
 # Different grouping of genes
 load("geneSets.Rdata")
@@ -220,6 +222,24 @@ load("SNV_geneSets.RData")
 
 plotting(SNV_geneSets)
 ```
-Here we can see that, overall, the model fits the data a little worse than before (because the maximum adjusted r squared decreased from 0.2 to 0.15).
-We can also see that none of the groups had a consistent coefficient through the cancer types, since all of them have both positive and negative coefficients.
+
+With this kind of grouping the model overall fits the data a little worse than before (because the maximum adjusted r squared decreased from 0.2 to 0.15).
+It is also important to note that none of the groups had a consistent coefficient through the cancer types, since all of them have both positive and negative coefficients.
 This can be explained because since there are less groups (about a half), more genes (about 30 times more) and each group is only represented as absent or present, the probability of each group being present randomly is greater.
+
+# Variable Selection
+
+The next approach is selecting a subset of variables that can explain the model just as good or better than the whole set. For this, it is used the Forward Stepwise Selection method.
+```{r Forward Stepwise Selection}
+
+```
+
+
+All of the genes will eventually be studied as one group..
+```{r PanCancer}
+pan_cancer <- list(genes = c())
+for (pathway in pathways_list){
+  pan_cancer$genes <- c(pan_cancer$genes, pathway)
+}
+```
+
