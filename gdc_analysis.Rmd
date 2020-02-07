@@ -204,6 +204,7 @@ load("SNV_pathways.RData")
 
 plotting(SNV_pathways)
 ```
+
 Here we can see that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
 
 Let's do the same but using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
@@ -220,6 +221,7 @@ load("SNV_geneSets.RData")
 
 plotting(SNV_geneSets)
 ```
+
 Here we can see that, overall, the model fits the data a little worse than before (because the maximum adjusted r squared decreased from 0.2 to 0.15).
 We can also see that none of the groups had a consistent coefficient through the cancer types, since all of them have both positive and negative coefficients.
 This can be explained because since there are less groups (about a half), more genes (about 30 times more) and each group is only represented as absent or present, the probability of each group being present randomly is greater.
