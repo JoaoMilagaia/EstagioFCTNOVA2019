@@ -242,4 +242,3 @@ for (pathway in pathways_list){
   pan_cancer$genes <- c(pan_cancer$genes, pathway)
 }
 ```
-
