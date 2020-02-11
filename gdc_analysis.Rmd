@@ -229,12 +229,77 @@ This can be explained because since there are less groups (about a half), more g
 
 # Variable Selection
 
-The next approach is selecting a subset of variables that can explain the model just as good or better than the whole set. For this, it is used the Forward Stepwise Selection method.
+The next approach is selecting a subset of variables that can explain the model just as good or better than the whole set. For this, it is used the Forward Stepwise Selection method and 5-fold cross-validation.
 ```{r Forward Stepwise Selection}
-
+library(leaps)
+test <- SNV_pathways$UCS
+ncols <- ncol(test) - 1 # Number of predictors
 ```
 
+```{r Method for regsubsets}
+predict.regsubsets <- function(object,newdata,id,...){
+  # object: regsubset object; newdata; id: id of the model
+  form=as.formula(object$call[[2]]) # Extract formula from object
+  mat=model.matrix(form,newdata) # Validation data set
+  coefi=coefficients(object,id=id)
+  mat[,names(coefi)]%*%coefi
+}
+```
 
+```{r 5-fold Cross-validation, warning=FALSE}
+set.seed(11)
+folds = sample(rep(1:5, length=nrow(test))) # Assigning all rows to one of 5 folds
+cv.errors = matrix(NA,5,ncols)
+for(k in 1:5){
+  best.fit = regsubsets(OUTPUT~.,data=test[folds!=k,],nvmax=ncols,method = "forward")
+  for(p in 1:(best.fit$nvmax - 1)){
+    pred=predict(best.fit,test[folds==k,],id=p)
+    cv.errors[k,p]=mean((test$OUTPUT[folds==k]-pred)^2)
+  }
+}
+rmse.cv=sqrt(apply(cv.errors,2,mean))
+p <- which.min(rmse.cv)
+regfit=regsubsets(OUTPUT~.,data=test,nvmax = ncols,method = "forward")
+variables<-regfit$vorder[1:(p+1)]
+selected_variables <- test[variables]
+```
+
+```{r warning=FALSE}
+library(leaps)
+set.seed(11)
+
+forward_selection <- function(data){
+  selected_data <- list()
+  ncols <- ncol(data[[1]]) - 1
+  for (i in 1:length(data)){
+    cancer <- data[[i]]
+    folds <- sample(rep(1:5, length = nrow(cancer)))
+    cv.errors <- matrix(NA, 5, ncols)
+    for (k in 1:5){
+      best.fit <- regsubsets(OUTPUT ~ ., data = cancer[folds != k,], nvmax = ncols, method = "forward")
+      for (p in 1:(best.fit$nvmax - 1)){
+        pred <- predict(best.fit, cancer[folds == k,], id = p)
+        cv.errors[k, p] <- mean((cancer$OUTPUT[folds == k] - pred) ^ 2)
+      }
+    }
+    rmse.cv <- sqrt(apply(cv.errors, 2, mean))
+    p <- which.min(rmse.cv)
+    regfit <- regsubsets(OUTPUT ~ ., data = cancer, nvmax = ncols, method = "forward")
+    variables <- regfit$vorder[1:(p + 1)]
+    selected_variables <- cancer[variables]
+    
+    selected_data[[cancer_types[i]]] <- selected_variables
+  }
+  return(selected_data)
+}
+
+test <- SNV_pathways[1:2]
+SNV_pathways.fwd <- forward_selection(test)
+SNV_pathways.fwd
+data <- test
+```
+
+---
 All of the genes will eventually be studied as one group..
 ```{r PanCancer}
 pan_cancer <- list(genes = c())
