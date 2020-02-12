@@ -5,9 +5,9 @@ output: html_document
 ***
 # SNV data
 
-The first thing to do is get the data into the environment. Since the data is in several folders in the "SNV" folder, the "MANIFEST.txt" file is used to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
+Since the data is in several folders in the "SNV" folder, the "MANIFEST.txt" file is used to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
 ```{r paths}
-paths <- as.character(read.table("SNV/MANIFEST.txt", header = TRUE)$filename)
+paths <- as.character(read.table("SNV/MANIFEST.txt", header = T)$filename)
 paths <- paths[substr(paths, nchar(paths) - 1, nchar(paths)) == "gz"]
 paths <- paste("SNV/", paths, sep = "")
 
@@ -23,24 +23,24 @@ cancer_types <- unname(sapply(sapply(paths, strsplit, "[.]"), "[[", 2))
 cancer_types # Resulting in:
 ```
 
-Having the file paths and cancer types, it's time to create a list of data frames, each for each cancer.
-```{r SNV_data}
-# SNV_data <- lapply(paths, read.table, sep = "\t", header = TRUE, quote = "")
-# names(SNV_data) <- cancer_types
-# save(x = SNV_data, file = "SNV_data.RData")
-# load("SNV_data.RData")
+Having the file paths and cancer types, it's possible to create a list of data frames, each for each cancer.
+```{r SNV_data, eval=F}
+SNV_data <- lapply(paths, read.table, sep = "\t", header = T, quote = "")
+names(SNV_data) <- cancer_types
+save(SNV_data, file = "SNV_data.RData")
+load("SNV_data.RData")
 ```
 Since this process takes a while, the SNV_data object is saved in a file that could be loaded when needed.
 
 # First approach
 
-To study Intra Tumoral Heterogeneity, it is calculated a unit of it, such as mutant-allele tumor heterogeneity (MATH). For this it is created a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
+To study Intra Tumoral Heterogeneity, a unit of it must be calculated. In this study it is calculated the mutant-allele tumor heterogeneity (MATH) with a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
 
 To calculate the MATH value of each tumor, one must calculate the mutant-allele fraction (MAF) values of all the somatic mutations in the tumor, like so:
 $$MAF = \frac{t\_alt\_count}{t\_depth}$$
 Where t_alt_count represents the number of mutated alleles and t_depth is the total amount of alleles.
 
-Next, it is calculated the median absolute deviation (MAD) value of the tumor:
+Next, the median absolute deviation (MAD) value of the tumor is calculated:
 $$MAD = \frac{1.4826}{n} \sum_{i = 1}^{n} \left( \left\lvert{ MAF_{i} - \frac{1}{n} \sum_{i = 1}^{n} (MAF_{i}) }\right\rvert \right)$$
 Which is multiplied by a factor of 1.4826 "so that the expected MAD of a normally distributed variable is equal to its standard deviation".
 
@@ -53,12 +53,14 @@ MATH_calculator <- function(cancer_data){
   cancer_data$MAF <- with(cancer_data, t_alt_count / t_depth)
   
   # Calculating MATH for each tumor
-  MATH_data <- aggregate(cancer_data$MAF,
-                         by = list(cancer_data$Tumor_Sample_Barcode),
-                         function(MAF){
-                           MAD <- median(abs(MAF - median(MAF))) * 1.4826
-                           MATH <- 100 * MAD / median(MAF)
-                           return(MATH)})
+  MATH_data <- aggregate(
+    cancer_data$MAF,
+    by = list(cancer_data$Tumor_Sample_Barcode),
+    function(MAF){
+      MAD <- median(abs(MAF - median(MAF))) * 1.4826
+      MATH <- 100 * MAD / median(MAF)
+    }
+  )
   names(MATH_data) <- c("Tumor_Sample_Barcode", "OUTPUT")
   return(MATH_data)
 }
@@ -71,7 +73,7 @@ pathways_list <- list(
   Transcription_factor = c("FOXA2", "CEBPA", "VEZF1", "SOX9", "PHF6", "EIF4A2", "WT1", "SIN3A", "EP300", "TBX3", "MECOM", "RUNX1", "TSHZ2", "TAF1", "CTCF", "TSHZ3", "GATA3", "VHL"),
   EpigeneticMod = c("EZH2", "ASXL1", "ARID5B", "MLL4", "KDM6A", "KDM5C", "SETBP1", "NSD1", "SETD2", "PBRM1", "ARID1A", "MLL2", "MLL3", "TET1", "TET2", "DNMT3A", "DNMT3B", "DNMT1", "HIST1H1C", "HIST1H2BD", "H3F3C"), # remove "TET1", "DNMT3B", "DNMT1"??
   Genome_integrity = c("ERCC2", "CHEK2", "SMC3", "SMC1A", "BRCA1", "BAP1", "STAG2", "ATR", "BRCA2", "ATRX", "ATM", "TP53"),
-  RTK_signalling = c("FGFR3", "KIT", "FGFR2", "EPHB6", "PDGFRA", "ERBB4", "EPHA3", "FLT3", "EGFR"),
+  RTK_signalling = c("FGFR3", "KIT", "FGFR2", "EPHB6", "PDGFRA", "ERBB4", "EPHA3", "FLT3", "EGFR"), 
   Cell_cycle = c("CDKN2C", "CDKN1A", "CDK12", "RB1", "CDKN2A"),
   MAPK_signalling = c("MAPK8IP1", "BRAF", "MAP3K1", "NF1", "KRAS"),
   PIK_signalling = c("AKT1", "PIK3CG", "TLR4", "PIK3R1", "PTEN", "PIK3CA"),
@@ -85,39 +87,49 @@ pathways_list <- list(
   Protein_phosphatase = c("PTPN11", "PPP2R1A"),
   Ribosome = c("RPL5", "RPL22"),
   TOR_signalling = c("STK11", "MTOR")
-  )
+)
 ```
 
-For the linear model, the measure of ITH (MATH) will be the response (y) and the predictors (x) will be the groups of genes as binary variables, taking the value of 1 if there is a mutation in at least one of the genes in the group and 0 if not. This way it is possible to model the variance of ITH and find which group of genes is more correlated with it.
+For the linear model, the measure of ITH (MATH) will be the response (y) and the predictors (x) will be the groups of genes as binary variables, taking the value of 1 if there is a mutation in at least one of the genes in the group and 0 if not.
 
 To do this, it is developed a function that:
-1. Groups the mutated genes per tumor
-2. Checks if each of those genes is in each gene group
-3. For each tumor, informs if there is at least one mutated gene in each gene group 
+1. Groups the mutated genes per tumor;
+2. Checks if each of those genes is in each gene group;
+3. For each tumor, informs if there is at least one mutated gene in each gene group.
 ```{r Binary variables}
 binary_variables <- function(cancer_data, gene_group){
-  genes_per_tumor <- aggregate(cancer_data$Hugo_Symbol,
-                          by = list(cancer_data$Tumor_Sample_Barcode),
-                          function(genes){as.character(genes)})
+  genes_per_tumor <- aggregate(
+    cancer_data$Hugo_Symbol,
+    by = list(cancer_data$Tumor_Sample_Barcode),
+    function(genes){as.character(genes)}
+  )
   
-  variables <- t(sapply(apply(genes_per_tumor[2], # Each tumor
-                              1, function(gene_list){sapply(unlist(gene_list), # corresponds to a list of genes we'll go through
-                                                            function(gene){sapply(gene_group, # and for each group in gene_group, 
-                                                                                  function(group){gene %in% group
-                                                                                    # we check if the gene is in that group.
-                                                                                    })})}),
-                        # Now that we have a list of data frames that cross each tumor's mutated genes with the given groups, 
-                        function(x){apply(x, 1, # we'll go through each data frame and for each tumor's row (gene group)
-                                          function(x){sum(x) > 0 # we calculate the sum and if it is greater than 0, 
-                                            })})) # then there is a mutated gene from that group in that tumour.
-  # Since we want the gene groups to be columns and not rows, the last thing to do is transpose the matrix.
+  grouped_muts <- apply(
+    genes_per_tumor[2],
+    1,                                                         # Each tumor
+    function(gene_list){sapply(
+      unlist(gene_list),                                       # corresponds to a list of genes to go through
+      function(gene){sapply(gene_group,                        # and for each group in gene_group, 
+                            function(group){gene %in% group})} # it is verified if each gene is in that group.
+    )}
+  )
   
-  MATH_data <- MATH_calculator(cancer_data) # And with the MATH values added, we have everything needed for the model.
-  final_data <- cbind(MATH_data, variables)[, -c(1)] # We take out the first column because we don't need the tumor sample codes.
+  variables <- sapply(
+    grouped_muts,              # With this list of data frames that cross each tumor's mutated genes with the given groups, 
+    function(dataframe){apply( # each data frame is scrolled
+      dataframe,
+      1,                       # and for each data frame's row (gene group)
+      function(x){sum(x) > 0}
+      # It is checked if the row's sum is greater than 0 (there is at least one mutated gene from that group in that tumour).
+    )}
+  )
+  variables <- t(variables)    # Lastly, the matrix is transposed so that the gene groups are columns and not rows.
+  
+  MATH_data <- MATH_calculator(cancer_data)
+  final_data <- cbind(MATH_data, variables)[, -c(1)] # The first column is removed since the tumor sample codes are not needed.
   return(final_data)
 }
 ```
-Where each row represents a tumor sample.
 
 Another important thing to do is to exclude silent mutations since those won't actually affect ITH.
 ```{r Exclude silent mutations}
@@ -131,96 +143,110 @@ delete_silent <- function(cancer_data, gene_group){
 
 # Final functions
 
-Now that the functions to process each individual cancer data frame are developed, it's time to apply them to the list of data frames with the following function.
+Now that the functions to process each individual cancer data frame are developed, it's time to apply them to the list of data frames with the following function:
 ```{r Process data}
 process <- function(data, gene_group){
   processed_data <- list()
   for (i in 1:length(data)){
-    processed_data[[cancer_types[i]]] <- delete_silent(data[[i]], gene_group)
+    processed_data[[names(data)[i]]] <- delete_silent(data[[i]], gene_group)
   }
   return(processed_data)
 }
 ```
 The next step is to calculate the adjusted R squared for each processed data frame's linear model as well as all of the significant coefficients in order to efficiently see and compare the results.
-```{r Adjusted R squared}
-adj_r_sqrd <- function(processed_data){
-  r_list <- numeric(length(processed_data)); names(r_list) <- cancer_types
-  for (i in 1:length(processed_data)){
+The vorder object corresponds to the order by which the variables were added to the models in future variable selection methods.
+```{r Adjusted R squared and Coefficients}
+adj_r_sqrd_coefs <- function(processed_data, gene_group){
+  r_list <- numeric(length(processed_data)); names(r_list) <- names(processed_data)
+  coef_matrix <- matrix(
+    nrow = length(processed_data),
+    ncol = length(gene_group),
+    dimnames = list(names(processed_data), names(gene_group))
+  )
+  vorder <- coef_matrix; vorder[is.na(vorder)] <- ""
+  for(i in 1:length(processed_data)){
     fit <- lm(OUTPUT ~ ., data = processed_data[[i]])
-    adj_r_sqrd <- summary(fit)$adj.r.squared
-    r_list[i] <- adj_r_sqrd
-  }
-  return(r_list)
-  }
-```
-```{r Coefficients}
-coef_matrix <- function(processed_data){
-  coef_matrix <- matrix(NA,
-                        nrow = length(processed_data),
-                        ncol = length(processed_data[[1]]) - 1,
-                        dimnames = list(names(processed_data), names(processed_data[[1]])[-1]))
-  for (i in 1:length(processed_data)){
-    fit <- lm(OUTPUT ~ ., data = processed_data[[i]])
-    coef <- as.data.frame(summary(fit)$coef)[-c(1), ]
-    sig <- coef[coef$`Pr(>|t|)` < 0.05, ]
-    if (nrow(sig) > 0){
-      for (j in 1:nrow(sig)){
-        group_name <- row.names(sig)[j]
-        group_name <- gsub("TRUE", "", group_name)
-        group_name <- gsub("FALSE", "", group_name)
-        coef_matrix[i, group_name] <- sig[j, 1]
+    r_list[i] <- summary(fit)$adj.r.squared
+    coefs <- as.data.frame(summary(fit)$coef)
+    coefs <- coefs[row.names(coefs) != "(Intercept)", ]
+    if (nrow(coefs) > 0){
+      row.names(coefs) <- gsub("TRUE", "", row.names(coefs))
+      for (k in 1:nrow(coefs)){
+        vorder[i, row.names(coefs)[k]] <- k
+      }
+      sig <- coefs[coefs$`Pr(>|t|)` < 0.05, ]
+      if (nrow(sig) > 0){
+        for (j in 1:nrow(sig)){
+          group_name <- row.names(sig)[j]
+          coef_matrix[i, group_name] <- sig[j, 1]
+        }
       }
     }
   }
-  return(coef_matrix)
+  return(list(r_list, coef_matrix, vorder))
 }
 ```
+
 And finally a plotting function to bring everything together.
-```{r Plots}
+```{r Plotting}
 library(gplots) # bluered
 library(pheatmap)
 
-plotting <- function(processed_data){
-  Adjusted_R_Squared <- adj_r_sqrd(processed_data)
-  CoefMatrix <- coef_matrix(processed_data)
-  pheatmap(CoefMatrix,
-           cluster_rows = FALSE,
-           cluster_cols = FALSE,
-           color = bluered(9),
-           annotation_row = as.data.frame(Adjusted_R_Squared),
-           angle_col = 315,
-           breaks = c(seq(min(CoefMatrix, na.rm = TRUE), 0, length = 5), seq(0.000001, max(CoefMatrix, na.rm = TRUE), length = 5)),
-           na_col = 0
-           )
+plotting <- function(processed_data, gene_group = pathways_list, order = F, save = F, folder = "Resultados/", file = deparse(substitute(processed_data)), format = ".png", ...){
+  r_coef <- adj_r_sqrd_coefs(processed_data, gene_group)
+  Adjusted_R_Squared <- r_coef[[1]]
+  CoefMatrix <- r_coef[[2]]
+  vorder <- r_coef[[3]]
+  pheatmap(
+    CoefMatrix,
+    cluster_rows = F,
+    cluster_cols = F,
+    color = bluered(9),
+    breaks = c(seq(min(CoefMatrix, na.rm = T), 0, length = 5), seq(0.000001, max(CoefMatrix, na.rm = T), length = 5)),
+    na_col = 0,
+    angle_col = 315,
+    fontsize = 8,
+    annotation_row = as.data.frame(Adjusted_R_Squared),
+    display_numbers = switch(order + 1, F, vorder),
+    number_color = 1,
+    filename = switch(save + 1, NA, paste(folder, file, format, sep = "")),
+    ...
+  )
 }
 ```
 
 # Results
 
 Using the pathways grouping results in:
+```{r SNV_pathways, eval=F}
+SNV_pathways <- process(SNV_data, pathways_list)
+save(SNV_pathways, file = "SNV_pathways.RData")
+```
 ```{r SNV_pathways}
-# SNV_pathways <- process(SNV_data, pathways_list)
-# save(x = SNV_pathways, file = "SNV_pathways.RData")
 load("SNV_pathways.RData")
-
 plotting(SNV_pathways)
+# plotting(SNV_pathways, save = T)
 ```
 
-Here it is visible that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
+In this plot, each model's adjusted r squared is represented in the green column, the positive coefficients are in red and the negative coefficients are in blue. The blank squares represent coefficients that were either excluded from the model or have a p-value < 0.05.
+It is visible that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
 
 However, the results look different using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
-```{r SNV_geneSets}
-# Different grouping of genes
+```{r geneSets}
 load("geneSets.Rdata")
 for (i in 1:length(geneSets)){
   geneSets[[i]] <- as.list(geneSets[[i]][1][, 1])
 }
-
-# SNV_geneSets <- process(SNV_data, geneSets)
-# save(x = SNV_geneSets, file = "SNV_geneSets.RData")
+```
+```{r SNV_geneSets, eval=F}
+SNV_geneSets <- process(SNV_data, geneSets)
+save(SNV_geneSets, file = "SNV_geneSets.RData")
+```
+```{r SNV_geneSets}
 load("SNV_geneSets.RData")
-
-plotting(SNV_geneSets)
+plotting(SNV_geneSets, gene_group = geneSets)
+# plotting(SNV_geneSets, gene_group = geneSets, cellwidth = 19.25)
+# plotting(SNV_geneSets, gene_group = geneSets, save = T)
 ```
 
 With this kind of grouping the model overall fits the data a little worse than before (because the maximum adjusted r squared decreased from 0.2 to 0.15).
@@ -229,79 +255,85 @@ This can be explained because since there are less groups (about a half), more g
 
 # Variable Selection
 
-The next approach is selecting a subset of variables that can explain the model just as good or better than the whole set. For this, it is used the Forward Stepwise Selection method and 5-fold cross-validation.
-```{r Forward Stepwise Selection}
-library(leaps)
-test <- SNV_pathways$UCS
-ncols <- ncol(test) - 1 # Number of predictors
-```
+The next approach is to select a subset of variables that can explain the response just as good as the whole set, that is, to remove variables that are unnecessary to the model. For this, it is used the Forward Stepwise Selection method and 5-fold cross-validation.
 
-```{r Method for regsubsets}
-predict.regsubsets <- function(object,newdata,id,...){
-  # object: regsubset object; newdata; id: id of the model
-  form=as.formula(object$call[[2]]) # Extract formula from object
-  mat=model.matrix(form,newdata) # Validation data set
-  coefi=coefficients(object,id=id)
-  mat[,names(coefi)]%*%coefi
+In the 5-fold cross-validation, the data is divided equally into 5 parts, a model is fitted on 4 of them (training set) for a range of numbers of variables and the test error is recorded on the 5th part (validation set). This process is done in turn for all 5 parts playing the role of the validation set and in the end the model with the lowest root mean squared error is chosen as the best model for that cancer type.
+
+However, in order to record the test error, it is necessary to make a prediction using the trained model and since there isn't a predict method for regsubsets objects (given by the forward stepwise selection method), it is convenient to develop one.
+```{r Predict method for regsubsets}
+predict.regsubsets <- function(object, newdata, id, ...){
+  # object: regsubset object; newdata: validation set; id: id (size) of the model
+  form <- as.formula(object$call[[2]])   # Extract formula from object
+  mat <- model.matrix(form, newdata)     # Validation data set
+  coefi <- coefficients(object, id = id)   # Model coefficients
+  return(mat[, names(coefi)] %*% coefi) # Prediction
 }
 ```
 
-```{r 5-fold Cross-validation, warning=FALSE}
-set.seed(11)
-folds = sample(rep(1:5, length=nrow(test))) # Assigning all rows to one of 5 folds
-cv.errors = matrix(NA,5,ncols)
-for(k in 1:5){
-  best.fit = regsubsets(OUTPUT~.,data=test[folds!=k,],nvmax=ncols,method = "forward")
-  for(p in 1:(best.fit$nvmax - 1)){
-    pred=predict(best.fit,test[folds==k,],id=p)
-    cv.errors[k,p]=mean((test$OUTPUT[folds==k]-pred)^2)
-  }
-}
-rmse.cv=sqrt(apply(cv.errors,2,mean))
-p <- which.min(rmse.cv)
-regfit=regsubsets(OUTPUT~.,data=test,nvmax = ncols,method = "forward")
-variables<-regfit$vorder[1:(p+1)]
-selected_variables <- test[variables]
-```
-
-```{r warning=FALSE}
+```{r Forward Selection with 5-fold CV, eval=F}
 library(leaps)
-set.seed(11)
 
-forward_selection <- function(data){
-  selected_data <- list()
-  ncols <- ncol(data[[1]]) - 1
-  for (i in 1:length(data)){
-    cancer <- data[[i]]
-    folds <- sample(rep(1:5, length = nrow(cancer)))
-    cv.errors <- matrix(NA, 5, ncols)
-    for (k in 1:5){
-      best.fit <- regsubsets(OUTPUT ~ ., data = cancer[folds != k,], nvmax = ncols, method = "forward")
-      for (p in 1:(best.fit$nvmax - 1)){
-        pred <- predict(best.fit, cancer[folds == k,], id = p)
-        cv.errors[k, p] <- mean((cancer$OUTPUT[folds == k] - pred) ^ 2)
-      }
+SNV_pathways_fwd <- list()
+for (i in 1:length(SNV_pathways)){
+  cancer_data <- na.omit(SNV_pathways[[i]])
+  nvar <- ncol(cancer_data) - 1
+  set.seed(11)
+  folds <- sample(rep(1:5, length = nrow(cancer_data)))
+  cv.errors <- matrix(NA, 5, nvar)
+  for (k in 1:5){
+    best.fit <- regsubsets(OUTPUT ~ ., data = cancer_data[folds != k, ], nvmax = nvar, method = "forward")
+    for (p in 1:(best.fit$nvmax - 1)){
+      pred <- predict(best.fit, cancer_data[folds == k, ], id = p)
+      cv.errors[k, p] <- mean((cancer_data$OUTPUT[folds == k] - pred) ^ 2)
     }
-    rmse.cv <- sqrt(apply(cv.errors, 2, mean))
-    p <- which.min(rmse.cv)
-    regfit <- regsubsets(OUTPUT ~ ., data = cancer, nvmax = ncols, method = "forward")
-    variables <- regfit$vorder[1:(p + 1)]
-    selected_variables <- cancer[variables]
-    
-    selected_data[[cancer_types[i]]] <- selected_variables
   }
-  return(selected_data)
+  rmse.cv <- sqrt(apply(cv.errors, 2, mean))
+  p <- which.min(rmse.cv)
+  regfit <- regsubsets(OUTPUT ~ ., data = cancer_data, nvmax = p - 1, method = "forward")
+  variables <- regfit$vorder[1:(p + 1)]
+  selected_variables <- cancer_data[variables]
+  
+  SNV_pathways_fwd[[names(SNV_pathways)[i]]] <- selected_variables
 }
 
-test <- SNV_pathways[1:2]
-SNV_pathways.fwd <- forward_selection(test)
-SNV_pathways.fwd
-data <- test
+save(SNV_pathways_fwd, file = "SNV_pathways_fwd.RData")
 ```
+
+```{r SNV_pathways_fwd}
+load("SNV_pathways_fwd.RData")
+plotting(SNV_pathways_fwd, order = T)
+# plotting(SNV_pathways_fwd, order = T, save = T)
+```
+
+This plot is similar to the SNV-pathways plot but instead only the significant coefficients that were selected by the best model (selected by the Forward Stepwise Selection method) are shown. The numbers represent the order by which the variables were included in that model (including insignificant coefficients).
+With this plot it's possible to see not only that the genome integrity pathway is still relevant, but also that now the PIK signalling also appears as an pathway of interest since it has a (negative) significant coefficient in about 1/6 of the cancer types studied (being that all but one was the first variable included in those models).
+
+Another method of variable selection would be choosing the model by the Akaike information criterion (AIC) in a Stepwise Algorithm, although the results don't seem very different.
+```{r Step}
+SNV_pathways_step <- list()
+for (i in 1:length(SNV_pathways)){
+  cancer_data <- SNV_pathways[[i]]
+  data_steps <- step(lm(OUTPUT ~ 1, data = cancer_data), direction = "forward", scope = formula(cancer_data), trace = 0)
+  # OUTPUT ~ 1 is the expected MATH when the predictors are zero or have no influence (mean MATH)
+  SNV_pathways_step[[names(SNV_pathways)[i]]] <- data_steps$model
+}
+plotting(SNV_pathways_step, order = T)
+# plotting(SNV_pathways_step, order = T, save = T)
+```
+
+# Shrinkage Methods
+
+Subset selection methods use least squares to fit a linear model that contains a subset of predictors. An alternative would be to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero because this would reduce their variance.
+Shrinkage methods, such as ridge regression and lasso, are used to this end. In this case, the lasso will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
+
+```{r Lasso}
+
+```
+
 
 ---
 All of the genes will eventually be studied as one group..
-```{r PanCancer}
+```{r PanCancer, eval=F}
 pan_cancer <- list(genes = c())
 for (pathway in pathways_list){
   pan_cancer$genes <- c(pan_cancer$genes, pathway)
