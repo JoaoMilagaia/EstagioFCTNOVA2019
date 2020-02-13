@@ -126,7 +126,7 @@ binary_variables <- function(cancer_data, gene_group){
   variables <- t(variables)    # Lastly, the matrix is transposed so that the gene groups are columns and not rows.
   
   MATH_data <- MATH_calculator(cancer_data)
-  final_data <- cbind(MATH_data, variables)[, -c(1)] # The first column is removed since the tumor sample codes are not needed.
+  final_data <- cbind(MATH_data, variables)[, -1] # The first column is removed since the tumor sample codes are not needed.
   return(final_data)
 }
 ```
@@ -323,10 +323,24 @@ plotting(SNV_pathways_step, order = T)
 
 # Shrinkage Methods
 
-Subset selection methods use least squares to fit a linear model that contains a subset of predictors. An alternative would be to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero because this would reduce their variance.
-Shrinkage methods, such as ridge regression and lasso, are used to this end. In this case, the lasso will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
+Subset selection methods use least squares to fit a linear model that contains a subset of predictors. Shrinkage methods (such as Ridge and Lasso regression) are an alternative since they're able to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero which would reduce their variance.
+In this case, the Lasso (Least Absolute Shrinkage and Selection Operator) will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
 
-```{r Lasso}
+```{r}
+library(glmnet)
+
+SNV_pathways_lasso <- list()
+for (i in 1:length(SNV_pathways)){
+  test <- na.omit(SNV_pathways[[i]]) # CORTAR MAL PELA RAIZ AKA REMOVER MAF QUE DÁ NA !!!!!
+  x <- as.matrix(test[, -1])
+  y <- test$OUTPUT
+  set.seed(1)
+  cv.lasso <- cv.glmnet(x, y, k = 5)
+  SNV_pathways_lasso[[names(SNV_pathways)[i]]] <- glmnet(x, y, lambda = cv.lasso$lambda.1se)
+}
+```
+
+```{r}
 
 ```
 
