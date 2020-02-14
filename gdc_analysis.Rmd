@@ -49,6 +49,7 @@ $$MATH = 100 \frac{MAD}{\frac{1}{n} \sum_{i = 1}^{n} (MAF_{i})}$$
 
 ```{r MATH}
 MATH_calculator <- function(cancer_data){
+  cancer_data <- cancer_data[cancer_data$t_depth != 0, ]
   # Calculating MAF for each mutation
   cancer_data$MAF <- with(cancer_data, t_alt_count / t_depth)
   
@@ -275,7 +276,7 @@ library(leaps)
 
 SNV_pathways_fwd <- list()
 for (i in 1:length(SNV_pathways)){
-  cancer_data <- na.omit(SNV_pathways[[i]])
+  cancer_data <- SNV_pathways[[i]]
   nvar <- ncol(cancer_data) - 1
   set.seed(11)
   folds <- sample(rep(1:5, length = nrow(cancer_data)))
@@ -326,12 +327,12 @@ plotting(SNV_pathways_step, order = T)
 Subset selection methods use least squares to fit a linear model that contains a subset of predictors. Shrinkage methods (such as Ridge and Lasso regression) are an alternative since they're able to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero which would reduce their variance.
 In this case, the Lasso (Least Absolute Shrinkage and Selection Operator) will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
 
-```{r}
+```{r Lasso}
 library(glmnet)
 
 SNV_pathways_lasso <- list()
 for (i in 1:length(SNV_pathways)){
-  test <- na.omit(SNV_pathways[[i]]) # CORTAR MAL PELA RAIZ AKA REMOVER MAF QUE DÁ NA !!!!!
+  test <- SNV_pathways[[i]]
   x <- as.matrix(test[, -1])
   y <- test$OUTPUT
   set.seed(1)
@@ -339,11 +340,6 @@ for (i in 1:length(SNV_pathways)){
   SNV_pathways_lasso[[names(SNV_pathways)[i]]] <- glmnet(x, y, lambda = cv.lasso$lambda.1se)
 }
 ```
-
-```{r}
-
-```
-
 
 ---
 All of the genes will eventually be studied as one group..
