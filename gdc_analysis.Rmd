@@ -104,7 +104,6 @@ binary_variables <- function(cancer_data, gene_group){
     by = list(cancer_data$Tumor_Sample_Barcode),
     function(genes){as.character(genes)}
   )
-  
   grouped_muts <- apply(
     genes_per_tumor[2],
     1,                                                         # Each tumor
@@ -114,7 +113,6 @@ binary_variables <- function(cancer_data, gene_group){
                             function(group){gene %in% group})} # it is verified if each gene is in that group.
     )}
   )
-  
   variables <- sapply(
     grouped_muts,              # With this list of data frames that cross each tumor's mutated genes with the given groups, 
     function(dataframe){apply( # each data frame is scrolled
@@ -219,7 +217,7 @@ plotting <- function(processed_data, gene_group = pathways_list, order = F, save
 # Results
 
 Using the pathways grouping results in:
-```{r SNV_pathways, eval=F}
+```{r Process SNV pathways, eval=F}
 SNV_pathways <- process(SNV_data, pathways_list)
 save(SNV_pathways, file = "SNV_pathways.RData")
 ```
@@ -239,7 +237,7 @@ for (i in 1:length(geneSets)){
   geneSets[[i]] <- as.list(geneSets[[i]][1][, 1])
 }
 ```
-```{r SNV_geneSets, eval=F}
+```{r Process SNV geneSets, eval=F}
 SNV_geneSets <- process(SNV_data, geneSets)
 save(SNV_geneSets, file = "SNV_geneSets.RData")
 ```
@@ -270,7 +268,6 @@ predict.regsubsets <- function(object, newdata, id, ...){
   return(mat[, names(coefi)] %*% coefi) # Prediction
 }
 ```
-
 ```{r Forward Selection with 5-fold CV, eval=F}
 library(leaps)
 
@@ -299,7 +296,6 @@ for (i in 1:length(SNV_pathways)){
 
 save(SNV_pathways_fwd, file = "SNV_pathways_fwd.RData")
 ```
-
 ```{r SNV_pathways_fwd}
 load("SNV_pathways_fwd.RData")
 plotting(SNV_pathways_fwd, order = T)
@@ -310,7 +306,7 @@ This plot is similar to the SNV-pathways plot but instead only the significant c
 With this plot it's possible to see not only that the genome integrity pathway is still relevant, but also that now the PIK signalling also appears as an pathway of interest since it has a (negative) significant coefficient in about 1/6 of the cancer types studied (being that all but one was the first variable included in those models).
 
 Another method of variable selection would be choosing the model by the Akaike information criterion (AIC) in a Stepwise Algorithm, although the results don't seem very different.
-```{r Step}
+```{r Step, eval=F}
 SNV_pathways_step <- list()
 for (i in 1:length(SNV_pathways)){
   cancer_data <- SNV_pathways[[i]]
@@ -318,6 +314,10 @@ for (i in 1:length(SNV_pathways)){
   # OUTPUT ~ 1 is the expected MATH when the predictors are zero or have no influence (mean MATH)
   SNV_pathways_step[[names(SNV_pathways)[i]]] <- data_steps$model
 }
+save(SNV_pathways_step, file = "SNV_pathways_step.RData")
+```
+```{r SNV_pathways_step}
+load("SNV_pathways_step.RData")
 plotting(SNV_pathways_step, order = T)
 # plotting(SNV_pathways_step, order = T, save = T)
 ```
@@ -326,26 +326,69 @@ plotting(SNV_pathways_step, order = T)
 
 Subset selection methods use least squares to fit a linear model that contains a subset of predictors. Shrinkage methods (such as Ridge and Lasso regression) are an alternative since they're able to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero which would reduce their variance.
 In this case, the Lasso (Least Absolute Shrinkage and Selection Operator) will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
-
-```{r Lasso}
+```{r Lasso, eval=F}
 library(glmnet)
 
 SNV_pathways_lasso <- list()
 for (i in 1:length(SNV_pathways)){
-  test <- SNV_pathways[[i]]
-  x <- as.matrix(test[, -1])
-  y <- test$OUTPUT
+  cancer_data <- SNV_pathways[[i]]
+  x <- as.matrix(cancer_data[, -1])
+  y <- cancer_data$OUTPUT
   set.seed(1)
-  cv.lasso <- cv.glmnet(x, y, k = 5)
+  cv.lasso <- cv.glmnet(x, y, nfolds = 5)
   SNV_pathways_lasso[[names(SNV_pathways)[i]]] <- glmnet(x, y, lambda = cv.lasso$lambda.1se)
 }
+save(SNV_pathways_lasso, file = "SNV_pathways_lasso.RData")
 ```
 
----
-All of the genes will eventually be studied as one group..
-```{r PanCancer, eval=F}
-pan_cancer <- list(genes = c())
-for (pathway in pathways_list){
-  pan_cancer$genes <- c(pan_cancer$genes, pathway)
+Since lasso doesn't use least squares to fit a linear model, it's necessary to modify some functions to plot this data.
+```{r Lasso plotting functions}
+relevant_threshold <- 10^-3
+
+deviance_coefs <- function(processed_data, gene_group){
+  dev_list <- numeric(length(processed_data)); names(dev_list) <- names(processed_data)
+  coef_matrix <- matrix(
+    nrow = length(processed_data),
+    ncol = length(gene_group),
+    dimnames = list(names(processed_data), names(gene_group))
+  )
+  for(i in 1:length(processed_data)){
+    fit <- processed_data[[i]]
+    dev_list[i] <- fit$dev.ratio
+    tmp_coefs <- coef(fit)
+    coefs <- data.frame(name = tmp_coefs@Dimnames[[1]][tmp_coefs@i + 1], coefficient = tmp_coefs@x)
+    coefs <- coefs[-1, ]
+    if (nrow(coefs) > 0){
+      for (j in 1:nrow(coefs)){
+        if (abs(coefs[j, 2]) > relevant_threshold){
+          group_name <- as.character(coefs[j, 1])
+          coef_matrix[i, group_name] <- coefs[j, 2]
+        }
+      }
+    }
+  }
+  return(list(dev_list, coef_matrix))
 }
+lasso_plot <- function(processed_data, gene_group = pathways_list, save = F, folder = "Resultados/", file = deparse(substitute(processed_data)), format = ".png", ...){
+  dev_coef <- deviance_coefs(processed_data, gene_group)
+  Deviance <- dev_coef[[1]]
+  CoefMatrix <- dev_coef[[2]]
+  pheatmap(
+    CoefMatrix,
+    cluster_rows = F,
+    cluster_cols = F,
+    color = bluered(9),
+    breaks = c(seq(min(CoefMatrix, na.rm = T), 0, length = 5), seq(0.000001, max(CoefMatrix, na.rm = T), length = 5)),
+    na_col = 0,
+    angle_col = 315,
+    fontsize = 8,
+    annotation_row = as.data.frame(Deviance),
+    filename = switch(save + 1, NA, paste(folder, file, format, sep = "")),
+    ...
+  )
+}
+```
+```{r SNV_pathways_lasso}
+load("SNV_pathways_lasso.RData")
+lasso_plot(SNV_pathways_lasso)
 ```
