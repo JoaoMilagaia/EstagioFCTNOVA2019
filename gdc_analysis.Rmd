@@ -6,14 +6,14 @@ output: html_document
 # SNV data
 
 Since the data is in several folders in the "SNV" folder, the "MANIFEST.txt" file is used to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
-```{r paths}
+```{r Paths}
 paths <- as.character(read.table("SNV/MANIFEST.txt", header = T)$filename)
 paths <- paths[substr(paths, nchar(paths) - 1, nchar(paths)) == "gz"]
 paths <- paste("SNV/", paths, sep = "")
 
 paths[1] # Since each path has this structure:
 ```
-```{r cancer types}
+```{r Cancer Types}
 # The cancer types are acquired this way:
 cancer_types <- unname(sapply(sapply(paths, strsplit, "[.]"), "[[", 2))
                             # Splitting each path by "."
@@ -24,10 +24,10 @@ cancer_types # Resulting in:
 ```
 
 Having the file paths and cancer types, it's possible to create a list of data frames, each for each cancer.
-```{r SNV_data, eval=F}
-SNV_data <- lapply(paths, read.table, sep = "\t", header = T, quote = "")
-names(SNV_data) <- cancer_types
-save(SNV_data, file = "SNV_data.RData")
+```{r SNV data, eval=F}
+# SNV_data <- lapply(paths, read.table, sep = "\t", header = T, quote = "")
+# names(SNV_data) <- cancer_types
+# save(SNV_data, file = "SNV_data.RData")
 load("SNV_data.RData")
 ```
 Since this process takes a while, the SNV_data object is saved in a file that could be loaded when needed.
@@ -163,7 +163,7 @@ adj_r_sqrd_coefs <- function(processed_data, gene_group){
     dimnames = list(names(processed_data), names(gene_group))
   )
   vorder <- coef_matrix; vorder[is.na(vorder)] <- ""
-  for(i in 1:length(processed_data)){
+  for (i in 1:length(processed_data)){
     fit <- lm(OUTPUT ~ ., data = processed_data[[i]])
     r_list[i] <- summary(fit)$adj.r.squared
     coefs <- as.data.frame(summary(fit)$coef)
@@ -217,11 +217,10 @@ plotting <- function(processed_data, gene_group = pathways_list, order = F, save
 # Results
 
 Using the pathways grouping results in:
-```{r Process SNV pathways, eval=F}
-SNV_pathways <- process(SNV_data, pathways_list)
-save(SNV_pathways, file = "SNV_pathways.RData")
-```
-```{r SNV_pathways}
+```{r Pathways}
+# SNV_pathways <- process(SNV_data, pathways_list)
+# save(SNV_pathways, file = "SNV_pathways.RData")
+
 load("SNV_pathways.RData")
 plotting(SNV_pathways)
 # plotting(SNV_pathways, save = T)
@@ -231,17 +230,14 @@ In this plot, each model's adjusted r squared is represented in the green column
 It is visible that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
 
 However, the results look different using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
-```{r geneSets}
+```{r Gene Sets}
 load("geneSets.Rdata")
 for (i in 1:length(geneSets)){
   geneSets[[i]] <- as.list(geneSets[[i]][1][, 1])
 }
-```
-```{r Process SNV geneSets, eval=F}
-SNV_geneSets <- process(SNV_data, geneSets)
-save(SNV_geneSets, file = "SNV_geneSets.RData")
-```
-```{r SNV_geneSets}
+# SNV_geneSets <- process(SNV_data, geneSets)
+# save(SNV_geneSets, file = "SNV_geneSets.RData")
+
 load("SNV_geneSets.RData")
 plotting(SNV_geneSets, gene_group = geneSets)
 # plotting(SNV_geneSets, gene_group = geneSets, cellwidth = 19.25)
@@ -264,8 +260,8 @@ predict.regsubsets <- function(object, newdata, id, ...){
   # object: regsubset object; newdata: validation set; id: id (size) of the model
   form <- as.formula(object$call[[2]])   # Extract formula from object
   mat <- model.matrix(form, newdata)     # Validation data set
-  coefi <- coefficients(object, id = id)   # Model coefficients
-  return(mat[, names(coefi)] %*% coefi) # Prediction
+  coefi <- coefficients(object, id = id) # Model coefficients
+  return(mat[, names(coefi)] %*% coefi)  # Prediction
 }
 ```
 ```{r Forward Selection with 5-fold CV, eval=F}
@@ -293,10 +289,9 @@ for (i in 1:length(SNV_pathways)){
   
   SNV_pathways_fwd[[names(SNV_pathways)[i]]] <- selected_variables
 }
-
 save(SNV_pathways_fwd, file = "SNV_pathways_fwd.RData")
 ```
-```{r SNV_pathways_fwd}
+```{r Pathways Forward Selection}
 load("SNV_pathways_fwd.RData")
 plotting(SNV_pathways_fwd, order = T)
 # plotting(SNV_pathways_fwd, order = T, save = T)
@@ -316,7 +311,7 @@ for (i in 1:length(SNV_pathways)){
 }
 save(SNV_pathways_step, file = "SNV_pathways_step.RData")
 ```
-```{r SNV_pathways_step}
+```{r Pathways Step}
 load("SNV_pathways_step.RData")
 plotting(SNV_pathways_step, order = T)
 # plotting(SNV_pathways_step, order = T, save = T)
@@ -326,23 +321,26 @@ plotting(SNV_pathways_step, order = T)
 
 Subset selection methods use least squares to fit a linear model that contains a subset of predictors. Shrinkage methods (such as Ridge and Lasso regression) are an alternative since they're able to fit a model containing all the predictors using a technique that constrains or regularizes the coefficient estimates or that shrinks them towards zero which would reduce their variance.
 In this case, the Lasso (Least Absolute Shrinkage and Selection Operator) will be used because unlike ridge regression, it selects variables since lasso can set coefficients equal to zero.
-```{r Lasso, eval=F}
+```{r Lasso}
 library(glmnet)
 
-SNV_pathways_lasso <- list()
-for (i in 1:length(SNV_pathways)){
-  cancer_data <- SNV_pathways[[i]]
-  x <- as.matrix(cancer_data[, -1])
-  y <- cancer_data$OUTPUT
-  set.seed(1)
-  cv.lasso <- cv.glmnet(x, y, nfolds = 5)
-  SNV_pathways_lasso[[names(SNV_pathways)[i]]] <- glmnet(x, y, lambda = cv.lasso$lambda.1se)
+lasso <- function(data, process = F, gene_group = NA){
+  if (process){data <- process(data, gene_group)}
+  shrinked_data <- list()
+  for (i in 1:length(data)){
+    cancer_data <- data[[i]]
+    x <- as.matrix(cancer_data[, -1])
+    y <- cancer_data$OUTPUT
+    set.seed(1)
+    cv.lasso <- cv.glmnet(x, y, nfolds = 5)
+    shrinked_data[[names(data)[i]]] <- glmnet(x, y, lambda = cv.lasso$lambda.1se)
+  }
+  return(shrinked_data)
 }
-save(SNV_pathways_lasso, file = "SNV_pathways_lasso.RData")
 ```
 
 Since lasso doesn't use least squares to fit a linear model, it's necessary to modify some functions to plot this data.
-```{r Lasso plotting functions}
+```{r Lasso plotting}
 relevant_threshold <- 10^-3
 
 deviance_coefs <- function(processed_data, gene_group){
@@ -352,15 +350,15 @@ deviance_coefs <- function(processed_data, gene_group){
     ncol = length(gene_group),
     dimnames = list(names(processed_data), names(gene_group))
   )
-  for(i in 1:length(processed_data)){
+  for (i in 1:length(processed_data)){
     fit <- processed_data[[i]]
-    dev_list[i] <- fit$dev.ratio
+    dev_list[i] <- fit$dev.ratio # In lasso there isn't r squared but the deviance is equivalent
     tmp_coefs <- coef(fit)
     coefs <- data.frame(name = tmp_coefs@Dimnames[[1]][tmp_coefs@i + 1], coefficient = tmp_coefs@x)
     coefs <- coefs[-1, ]
     if (nrow(coefs) > 0){
       for (j in 1:nrow(coefs)){
-        if (abs(coefs[j, 2]) > relevant_threshold){
+        if (abs(coefs[j, 2]) > relevant_threshold){ # Excluding coefficients that are close to zero
           group_name <- as.character(coefs[j, 1])
           coef_matrix[i, group_name] <- coefs[j, 2]
         }
@@ -369,10 +367,14 @@ deviance_coefs <- function(processed_data, gene_group){
   }
   return(list(dev_list, coef_matrix))
 }
-lasso_plot <- function(processed_data, gene_group = pathways_list, save = F, folder = "Resultados/", file = deparse(substitute(processed_data)), format = ".png", ...){
+lasso_plot <- function(processed_data, gene_group = pathways_list, remove_blanks = F, save = F, folder = "Resultados/", file = deparse(substitute(processed_data)), format = ".png", ...){
   dev_coef <- deviance_coefs(processed_data, gene_group)
   Deviance <- dev_coef[[1]]
   CoefMatrix <- dev_coef[[2]]
+  if (remove_blanks){
+    CoefMatrix <- CoefMatrix[c(row.names(CoefMatrix)[rowSums(CoefMatrix, na.rm = T)!=0]), ]
+    CoefMatrix <- CoefMatrix[, c(colnames(CoefMatrix)[colSums(CoefMatrix, na.rm = T)!=0])]
+  }
   pheatmap(
     CoefMatrix,
     cluster_rows = F,
@@ -388,7 +390,63 @@ lasso_plot <- function(processed_data, gene_group = pathways_list, save = F, fol
   )
 }
 ```
-```{r SNV_pathways_lasso}
+```{r Pathways Lasso}
+# SNV_pathways_lasso <- lasso(SNV_pathways)
+# save(SNV_pathways_lasso, file = "SNV_pathways_lasso.RData")
+
 load("SNV_pathways_lasso.RData")
 lasso_plot(SNV_pathways_lasso)
+# lasso_plot(SNV_pathways_lasso, save = T)
 ```
+
+This plot shows that Lasso heavily decreases the number of variables. However, genome integrity and PIK signalling still appear to be major factors in ITH variation.
+
+# Genes as variables
+
+The next approach is to treat each gene (instead of each pathway) as a variable in order to uncover which genes are behind the pathway groups with regard to ITH variation, starting with the two most significant pathways: Genome integrity and PIK signaling.
+```{r Genome integrity & PIK signalling}
+genome_pik <- list()
+for (pathway in pathways_list[c("Genome_integrity","PIK_signalling")]){
+  for (gene in pathway){
+    genome_pik[[gene]] <- gene
+  }
+}
+# SNV_lasso_genomePIK <- lasso(SNV_data, process = T, gene_group = genome_pik)
+# save(SNV_lasso_genomePIK, file = "SNV_lasso_genomePIK.RData")
+
+load("SNV_lasso_genomePIK.RData")
+lasso_plot(SNV_lasso_genomePIK, gene_group = genome_pik, remove_blanks = T)
+# lasso_plot(SNV_lasso_genomePIK, gene_group = genome_pik, remove_blanks = T, cellwidth = 19.25, cellheight = 7.35)
+# lasso_plot(SNV_lasso_genomePIK, gene_group = genome_pik, remove_blanks = T, save = T)
+```
+
+```{r pathways genes}
+pathways_genes <- list()
+for (pathway in pathways_list){
+  for (gene in pathway){
+    pathways_genes[[gene]] <- gene
+  }
+}
+# SNV_lasso_pathwaygenes <- lasso(SNV_data, process = T, gene_group = pathways_genes)
+# save(SNV_lasso_pathwaygenes, file = "SNV_lasso_pathwaygenes.RData")
+
+load("SNV_lasso_pathwaygenes.RData")
+lasso_plot(SNV_lasso_pathwaygenes, gene_group = pathways_genes, remove_blanks = T)
+# lasso_plot(SNV_lasso_pathwaygenes, gene_group = pathways_genes, remove_blanks = T, save = T)
+```
+
+```{r GeneSets genes}
+geneSets_genes <- list()
+for (set in geneSets){
+  for (gene in set){
+    geneSets_genes[[gene]] <- gene
+  }
+}
+SNV_lasso_geneSetgenes <- lasso(SNV_data, process = T, gene_group = geneSets_genes)
+save(SNV_lasso_geneSetgenes, file = "SNV_lasso_geneSetgenes.RData")
+
+load("SNV_lasso_geneSetgenes.RData")
+lasso_plot(SNV_lasso_geneSetgenes, gene_group = geneSets_genes, remove_blanks = T)
+# lasso_plot(SNV_lasso_geneSetgenes, gene_group = geneSets_genes, remove_blanks = T, save = T)
+```
+
