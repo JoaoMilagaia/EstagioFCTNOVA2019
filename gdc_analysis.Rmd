@@ -24,7 +24,7 @@ cancer_types # Resulting in:
 ```
 
 Having the file paths and cancer types, it's possible to create a list of data frames, each for each cancer.
-```{r SNV data, eval=T}
+```{r SNV data, eval=F}
 # SNV_data <- lapply(paths, read.table, sep = "\t", header = T, quote = "")
 # names(SNV_data) <- cancer_types
 # save(SNV_data, file = "SNV_data.RData")
@@ -98,22 +98,31 @@ To do this, it is developed a function that:
 2. Checks if each of those genes is in each gene group;
 3. For each tumor, informs if there is at least one mutated gene in each gene group.
 ```{r Binary variables}
-binary_variables <- function(cancer_data, gene_group, OUTPUT_func = "MATH_calculator"){
+binary_variables <- function(cancer_data, gene_group, OUTPUT_func = "MATH_calculator", groups = T){
   genes_per_tumor <- aggregate(
     cancer_data$Hugo_Symbol,
     by = list(cancer_data$Tumor_Sample_Barcode),
     function(genes){as.character(genes)}
   )
-  variables <- apply(
-    genes_per_tumor[2],
-    1,
-    function(gene_list){sapply(
-      gene_group,
-      function(group){length(intersect(group, unlist(gene_list))) > 0}
-    )}
-  )
+  if (groups){
+    variables <- apply(
+      genes_per_tumor[2],
+      1,
+      function(gene_list){sapply(
+        gene_group,
+        function(group){length(intersect(group, unlist(gene_list))) > 0}
+      )}
+    )
+  } else {
+    variables <- apply(
+      genes_per_tumor[2],
+      1,
+      function(gene_list){gene_group %in% unlist(gene_list)}
+    )
+  }
+
   variables <- t(variables)    # Lastly, the matrix is transposed so that the gene groups are columns and not rows.
-  
+  colnames(variables) <- names(gene_group)
   OUTPUT_data <- eval(call(OUTPUT_func, cancer_data))
   
   final_data <- cbind(OUTPUT_data, variables)[, -1] # The first column is removed since the tumor sample codes are not needed.
@@ -142,7 +151,8 @@ process <- function(data, gene_group, one_for_all = T, ...){
   } else {
     processed_data <- list()
     for (i in 1:nrow(gene_group)){
-      processed_data[[gene_group[i, 1]]] <- delete_silent(data[[gene_group[i, 1]]], gene_group[i, 2][[1]], ...)
+      cancer_type <- as.character(gene_group[i, 1])
+      processed_data[[cancer_type]] <- delete_silent(data[[cancer_type]], gene_group[i, 2][[1]], ...)
     }
   }
   return(processed_data)
@@ -377,8 +387,9 @@ lasso_plot <- function(processed_data, gene_group = pathways_list, remove_blanks
   Deviance <- dev_coef[[1]]
   CoefMatrix <- dev_coef[[2]]
   if (remove_blanks){
-    CoefMatrix <- CoefMatrix[c(row.names(CoefMatrix)[rowSums(CoefMatrix, na.rm = T)!=0]), ]
-    CoefMatrix <- CoefMatrix[, c(colnames(CoefMatrix)[colSums(CoefMatrix, na.rm = T)!=0])]
+    not_NA <- !is.na(CoefMatrix)
+    CoefMatrix <- CoefMatrix[rowSums(not_NA) > 0, ]
+    CoefMatrix <- CoefMatrix[, colSums(not_NA) > 0]
   }
   extreme_point <- max(abs(CoefMatrix), na.rm = T)
   pheatmap(
@@ -411,9 +422,9 @@ This plot shows that Lasso heavily decreases the number of variables. However, g
 
 The next approach is to treat each gene (instead of each pathway) as a variable in order to uncover which genes are behind the pathway groups with regard to ITH variation, starting with the two most significant pathways: Genome integrity and PIK signaling.
 ```{r Genome integrity & PIK signalling}
-genome_pik <- with(pathways_list, as.list(c(Genome_integrity,PIK_signalling))); names(genome_pik) <- genome_pik
+genome_pik <- with(pathways_list, c(Genome_integrity,PIK_signalling)); names(genome_pik) <- genome_pik
 
-# SNV_lasso_genomePIK <- lasso(SNV_data, process = T, gene_group = genome_pik)
+# SNV_lasso_genomePIK <- lasso(SNV_data, process = T, gene_group = genome_pik, groups = F)
 # save(SNV_lasso_genomePIK, file = "SNV_lasso_genomePIK.RData")
 
 load("SNV_lasso_genomePIK.RData")
@@ -426,9 +437,9 @@ This plot shows that although there are 3 genes with a negative impact on ITH, T
 
 Looking at all of the pathways' genes, the result supports the previous one.
 ```{r pathways genes}
-pathways_genes <- as.list(unlist(pathways_list)); names(pathways_genes) <- pathways_genes
+pathways_genes <- unlist(pathways_list); names(pathways_genes) <- pathways_genes
 
-# SNV_lasso_pathwaygenes <- lasso(SNV_data, process = T, gene_group = pathways_genes)
+# SNV_lasso_pathwaygenes <- lasso(SNV_data, process = T, gene_group = pathways_genes, groups = F)
 # save(SNV_lasso_pathwaygenes, file = "SNV_lasso_pathwaygenes.RData")
 
 load("SNV_lasso_pathwaygenes.RData")
@@ -440,9 +451,9 @@ Once again it's visible that thanks to TP53, genome integrity plays a major role
 
 Now that pathways list has been analysed, it's time to analyse geneSets.
 ```{r GeneSets genes}
-geneSets_genes <- as.list(unique(unlist(geneSets))); names(geneSets_genes) <- geneSets_genes
+geneSets_genes <- unique(unlist(geneSets)); names(geneSets_genes) <- geneSets_genes
 
-# SNV_lasso_geneSetgenes <- lasso(SNV_data, process = T, gene_group = geneSets_genes)
+# SNV_lasso_geneSetgenes <- lasso(SNV_data, process = T, gene_group = geneSets_genes, groups = F)
 # save(SNV_lasso_geneSetgenes, file = "SNV_lasso_geneSetgenes.RData")
 
 load("SNV_lasso_geneSetgenes.RData")
@@ -456,28 +467,33 @@ The second plot shows the first without UCS. As usual, TP53 is the leading gene.
 
 Since the investigation group has a special interest in glycogenes, it is also analysed.
 ```{r Glycogenes}
-glycogenes <- as.list(geneSets$GLYC); names(glycogenes) <- glycogenes
+glycogenes <- geneSets$GLYC; names(glycogenes) <- glycogenes
 
-# SNV_lasso_glycogenes <- lasso(SNV_data, process = T, gene_group = glycogenes)
+# SNV_lasso_glycogenes <- lasso(SNV_data, process = T, gene_group = glycogenes, groups = F)
 # save(SNV_lasso_glycogenes, file = "SNV_lasso_glycogenes.RData")
 
 load("SNV_lasso_glycogenes.RData")
 # lasso_plot(SNV_lasso_glycogenes, gene_group = glycogenes, remove_blanks = T)
 sum(!is.na(deviance_coefs(SNV_lasso_glycogenes, glycogenes)[[2]]))
 ```
-As expected, the glycogenes group doesn't result in any significant coefficient, because mutations in glycogenes usually don't result in cancer. I wonder if a high copy number of glycogenes would.. Oh well.
+As expected, the glycogenes group doesn't result in any significant coefficient, because mutations in glycogenes usually don't result in cancer.
 
 And finally, using all of the file's genes as predictors:
-```{r All genes}
+```{r All genes, eval=F}
 genes_per_cancer <- sapply(sapply(sapply(SNV_data, "[", 1), as.character), unique)
 names(genes_per_cancer) <- gsub(".Hugo_Symbol", "", names(genes_per_cancer))
 all_genes <- unique(unlist(genes_per_cancer))
-genes_per_cancer <- cbind(names(genes_per_cancer),as.data.frame(matrix(genes_per_cancer, nrow = length(genes_per_cancer))))
+genes_per_cancer <- cbind(
+  names(genes_per_cancer),
+  as.data.frame(matrix(genes_per_cancer, nrow = length(genes_per_cancer)))
+)
 
-SNV_lasso_allgenes <- lasso(SNV_data, process = T, gene_group = genes_per_cancer, one_for_all = F)
-save(SNV_lasso_allgenes, file = "SNV_lasso_allgenes.RData")
+SNV_allgenes <- process(SNV_data, genes_per_cancer, one_for_all = F)
+SNV_lasso_allgenes <- lasso(SNV_allgenes)
+# SNV_lasso_allgenes <- lasso(SNV_data, process = T, gene_group = genes_per_cancer, one_for_all = F)
+# save(SNV_lasso_allgenes, file = "SNV_lasso_allgenes.RData")
 
-load("SNV_lasso_allgenes.RData")
+# load("SNV_lasso_allgenes.RData")
 lasso_plot(SNV_lasso_allgenes, gene_group = all_genes, remove_blanks = T)
 # lasso_plot(SNV_lasso_allgenes, gene_group = all_genes, remove_blanks = T, save = T)
 ```
@@ -486,7 +502,7 @@ lasso_plot(SNV_lasso_allgenes, gene_group = all_genes, remove_blanks = T)
 Another method of choosing which genes to use would be to select those that are significant in a dn/ds test.
 ```{r dNdScv}
 dnds <- read.table("dndscv_all_tumors.tab", header = T)
-dnds_genes <- as.list(as.character(unique(dnds$gene_name))); names(dnds_genes) <- dnds_genes
+dnds_genes <- as.character(unique(dnds$gene_name)); names(dnds_genes) <- dnds_genes
 dnds_grouped <- aggregate(
   dnds$gene_name,
   by = list(dnds$tumor),
@@ -533,14 +549,22 @@ lasso_plot(SNV_lasso_nmut_pathways, gene_group = pathways_list, remove_blanks = 
 
 load("SNV_lasso_nmut_pathwaygenes.RData")
 lasso_plot(SNV_lasso_nmut_pathwaygenes, gene_group = pathways_genes, remove_blanks = T)
-# lasso_plot(SNV_lasso_nmut_pathways, gene_group = pathways_genes, remove_blanks = T, save = T)
+lasso_plot(SNV_lasso_nmut_pathwaygenes[c("ESCA","LUSC","OV")], gene_group = pathways_genes, remove_blanks = T)
+# lasso_plot(SNV_lasso_nmut_pathwaygenes, gene_group = pathways_genes, remove_blanks = T, save = T)
 
 # All genes
 
-SNV_lasso_nmut_allgenes <- lasso(SNV_data, process = T, gene_group = genes_per_cancer, OUTPUT_func = "nmut")
-save(SNV_lasso_nmut_allgenes, file = "SNV_lasso_nmut_allgenes.RData")
-
-load("SNV_lasso_nmut_allgenes.RData")
-lasso_plot(SNV_lasso_nmut_allgenes, gene_group = all_genes, remove_blanks = T)
-# lasso_plot(SNV_lasso_nmut_allgenes, gene_group = all_genes, remove_blanks = T, save = T)
 ```
+
+
+
+```{r P53 boxplot}
+genes <- c("TP53","PIK3CA","ARID1A") ; names(genes) <- genes
+# SNV_p53 <- process(SNV_data, gene_group = genes, groups = F)
+for (i in 1:length(SNV_p53)){
+  boxplot(OUTPUT~ARID1A, data = SNV_p53[[i]], main = names(SNV_p53)[i])
+}
+print(wilcox.test(OUTPUT~ ARID1A, data = SNV_p53[["UCEC"]]))
+# print(t.test(OUTPUT~ ARID1A, data = SNV_p53[["UCEC"]]))
+```
+
