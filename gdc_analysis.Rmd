@@ -1,7 +1,13 @@
 ---
 title: "Uncovering Drivers of Intra Tumoral Heterogeneity"
 output: html_document
+author: João Milagaia
 ---
+```{r OS and R Version, echo=FALSE}
+osVersion
+R.Version()$version
+```
+
 ***
 # SNV data
 
@@ -235,7 +241,7 @@ plotting(SNV_pathways)
 In this plot, each model's adjusted r squared is represented in the green column, the positive coefficients are in red and the negative coefficients are in blue. The blank squares represent coefficients that were either excluded from the model or have a p-value < 0.05.
 It is visible that the maximum adjusted r squared was about 0.2 and that the most interesting pathway used is the Genome integrity pathway which has a (positive) significant coefficient in 1/3 of the cancer types studied (the most out of all the pathways).
 
-However, the results look different using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2953 genes.
+However, the results look different using a different kind of grouping, geneSets, which is a list of 7 groups with a total of 2719 genes (61 of which are shared with pathways_list).
 ```{r GeneSets List}
 load("data/geneSets.Rdata")
 for (i in 1:length(geneSets)){
@@ -560,9 +566,12 @@ genes <- c("TP53", "PIK3CA", "ARID1A"); names(genes) <- genes
 # save(SNV_p53, file = "data/SNV_p53.RData")
 
 load("data/SNV_p53.RData")
-for (i in 1:length(SNV_p53)){
-  boxplot(OUTPUT~ARID1A, data = SNV_p53[[i]], main = names(SNV_p53)[i])
-}
+boxplot(OUTPUT~TP53, data = SNV_p53[["UCEC"]])
+boxplot(OUTPUT~ARID1A, data = SNV_p53[["UCEC"]])
+# for (i in 1:length(SNV_p53)){
+#   boxplot(OUTPUT~ARID1A, data = SNV_p53[[i]], main = names(SNV_p53)[i])
+# }
+print(wilcox.test(OUTPUT~TP53, data = SNV_p53[["UCEC"]]))
 print(wilcox.test(OUTPUT~ ARID1A, data = SNV_p53[["UCEC"]]))
 # print(t.test(OUTPUT~ ARID1A, data = SNV_p53[["UCEC"]]))
 ```
