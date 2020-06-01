@@ -1,5 +1,5 @@
 ---
-title: "Uncovering Drivers of Intra Tumoral Heterogeneity"
+title: "Uncovering Drivers of Intratumor Heterogeneity"
 output: html_document
 author: João Milagaia
 ---
@@ -12,7 +12,7 @@ RStudio.Version()$version
 ***
 # SNV data
 
-Since the data is in several folders in the "SNV" folder, the "MANIFEST.txt" file is used to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
+Since the data is in several folders in the "SNV" folder, I use the "MANIFEST.txt" file to get all the file paths. This file also includes the annotations' file paths but only the data tables (".maf.gz" files) are of interest.
 ```{r Paths}
 paths <- as.character(read.table("SNV/MANIFEST.txt", header = T)$filename)
 paths <- paths[substr(paths, nchar(paths) - 1, nchar(paths)) == "gz"]
@@ -45,23 +45,23 @@ Since this process takes a while, the SNV_data object is saved in a file that ca
 
 # First approach
 
-To study Intra Tumoral Heterogeneity, a unit of it must be calculated. In this study it is calculated the mutant-allele tumor heterogeneity (MATH) with a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
+To study Intratumor Heterogeneity, a unit of it must be calculated. In this study I calculate the mutant-allele tumor heterogeneity (MATH) with a function that takes the data of one cancer and returns a data frame with the calculated MATH for each tumor sample.
 
 To calculate the MATH value of each tumor, one must calculate the mutant-allele fraction (MAF) values of all the somatic mutations in the tumor, like so:
 $$MAF = \frac{t\_alt\_count}{t\_depth}$$
 Where t_alt_count represents the number of mutant reads and t_depth is the total number of reads.
 
 Next, the median absolute deviation (MAD) value of the tumor is calculated:
-$$MAD = \frac{1.4826}{n} \sum_{i = 1}^{n} \left( \left\lvert{ MAF_{i} - \frac{1}{n} \sum_{i = 1}^{n} (MAF_{i}) }\right\rvert \right)$$
+$$MAD = 1.4826\ median(|MAF-median(MAF)|)$$
 Which is multiplied by a factor of 1.4826 "so that the expected MAD of a normally distributed variable is equal to its standard deviation".
 
 And finally, the MATH value, which is "the percentage ratio of the MAD to the median distribution of MAFs among the tumor's genomic loci":
-$$MATH = 100 \frac{MAD}{\frac{1}{n} \sum_{i = 1}^{n} (MAF_{i})}$$
+$$MATH = \frac{100\ MAD}{median(MAF)}$$
 
 ```{r MATH}
 MATH_calculator <- function(cancer_data){
   cancer_data <- cancer_data[cancer_data$t_depth != 0, ]
-  # Calculating MAF for each mutation
+  # Calculating MAF for each gene variant
   cancer_data$MAF <- with(cancer_data, t_alt_count / t_depth)
   
   # Calculating MATH for each tumor
@@ -71,6 +71,7 @@ MATH_calculator <- function(cancer_data){
     function(MAF){
       MAD <- median(abs(MAF - median(MAF))) * 1.4826
       MATH <- 100 * MAD / median(MAF)
+      MATH
     }
   )
   names(MATH_data) <- c("Tumor_Sample_Barcode", "OUTPUT")
@@ -79,11 +80,11 @@ MATH_calculator <- function(cancer_data){
 ```
 Where the OUTPUT corresponds to MATH values.
 
-Given the number of genes, it is convenient to sort them by groups that make sense from a biological point of view in order to do a linear model that explains the variation of ITH. Here, a list of 17 pathways with a total of 101 genes is used.
+Given the number of genes, it is convenient to sort them by groups that make sense from a biological point of view in order to do a linear model that explains the variation of ITH. Here, I use a list of 17 pathways with a total of 101 genes.
 ```{r Pathways List}
 pathways_list <- list(
   Transcription_factor = c("FOXA2", "CEBPA", "VEZF1", "SOX9", "PHF6", "EIF4A2", "WT1", "SIN3A", "EP300", "TBX3", "MECOM", "RUNX1", "TSHZ2", "TAF1", "CTCF", "TSHZ3", "GATA3", "VHL"),
-  EpigeneticMod = c("EZH2", "ASXL1", "ARID5B", "MLL4", "KDM6A", "KDM5C", "SETBP1", "NSD1", "SETD2", "PBRM1", "ARID1A", "MLL2", "MLL3", "TET1", "TET2", "DNMT3A", "DNMT3B", "DNMT1", "HIST1H1C", "HIST1H2BD", "H3F3C"), # remove "TET1", "DNMT3B", "DNMT1"??
+  EpigeneticMod = c("EZH2", "ASXL1", "ARID5B", "MLL4", "KDM6A", "KDM5C", "SETBP1", "NSD1", "SETD2", "PBRM1", "ARID1A", "MLL2", "MLL3", "TET1", "TET2", "DNMT3A", "DNMT3B", "DNMT1", "HIST1H1C", "HIST1H2BD", "H3F3C"),
   Genome_integrity = c("ERCC2", "CHEK2", "SMC3", "SMC1A", "BRCA1", "BAP1", "STAG2", "ATR", "BRCA2", "ATRX", "ATM", "TP53"),
   RTK_signaling = c("FGFR3", "KIT", "FGFR2", "EPHB6", "PDGFRA", "ERBB4", "EPHA3", "FLT3", "EGFR"),
   Cell_cycle = c("CDKN2C", "CDKN1A", "CDK12", "RB1", "CDKN2A"),
@@ -104,7 +105,7 @@ pathways_list <- list(
 
 For the linear model, the measure of ITH (MATH) will be the response (y) and the predictors (x) will be the groups of genes as binary variables, taking the value of 1 if there is a mutation in at least one of the genes in the group and 0 if not.
 
-To do this, it is developed a function that groups the gene variants per tumor and for each tumor, informs if there is at least one gene variant in each gene group.
+To do this, I developed a function that groups the gene variants per tumor and for each tumor, informs if there is at least one gene variant in each gene group.
 ```{r Binary variables}
 binary_variables <- function(cancer_data, gene_group, OUTPUT_func = "MATH_calculator", groups = T){
   genes_per_tumor <- aggregate(
@@ -281,7 +282,7 @@ This can be explained because since there are less groups (about a half), more g
 
 # Variable Selection
 
-The next approach is to select a subset of variables that can explain the response just as good as the whole set, that is, to remove variables that are unnecessary to the model. For this, it is used the Forward Stepwise Selection method and 5-fold cross-validation.
+The next approach is to select a subset of variables that can explain the response just as good as the whole set, that is, to remove variables that are unnecessary to the model. For this, I used the Forward Stepwise Selection method and 5-fold cross-validation.
 
 In the 5-fold cross-validation, the data is divided equally into 5 parts, a model is fitted on 4 of them (training set) for a range of numbers of variables and the test error is recorded on the 5th part (validation set). This process is done in turn for all 5 parts playing the role of the validation set and in the end the model with the lowest root mean squared error is chosen as the best model for that cancer type.
 
@@ -471,7 +472,7 @@ lasso_plot(SNV_lasso_pathwaygenes, gene_group = pathways_genes, remove_blanks = 
 
 Once again it's visible that thanks to TP53, genome integrity plays a major role in ITH. Other notable genes are PIK3CA (PI(3)K signaling), NSD1 and ARID1A (Epigenetic modifiers) and IDH1 (Metabolism).
 
-Now that pathways list has been analysed, it's time to analyse geneSets.
+Now that pathways list has been analyzed, it's time to analyze geneSets.
 ```{r GeneSets genes}
 geneSets_genes <- unique(unlist(geneSets)); names(geneSets_genes) <- geneSets_genes
 
@@ -487,7 +488,7 @@ lasso_plot(SNV_lasso_geneSetgenes[-1], gene_group = geneSets_genes, remove_blank
 UCS shows an interesting number of significant coefficients (maybe due to an error).
 The second plot shows the first without UCS. As usual, TP53 is the leading gene.
 
-Since the investigation group has a special interest in glycogenes, it is also analysed.
+Since the investigation group has a special interest in glycogenes, they are also analyzed.
 ```{r Glycogenes}
 glycogenes <- geneSets$GLYC; names(glycogenes) <- glycogenes
 
@@ -520,7 +521,7 @@ lasso_plot(SNV_lasso_allgenes, gene_group = all_genes, remove_blanks = T)
 # lasso_plot(SNV_lasso_allgenes, gene_group = all_genes, remove_blanks = T, save = T)
 ```
 
-Another method of choosing which genes to use would be to select those that are significant in a dn/ds test.
+Another method of choosing which genes to use would be to select those that are significant in a dndscv test (under selective pressure).
 ```{r dNdScv}
 dnds <- read.table("data/dndscv_all_tumors.tab", header = T)
 dnds_genes <- as.character(unique(dnds$gene_name)); names(dnds_genes) <- dnds_genes
@@ -544,7 +545,7 @@ While TP53 still appears to be relevant, ARID1A (from the epigenetic modifiers p
 
 # Other measures of ITH
 
-Another simple measure of ITH would be the number of mutations. Genome integrity is expected to be a significant pathway and the models are expected to be strong.
+An alternative to ITH would be the number of mutations. Genome integrity is expected to be a significant pathway and the models are expected to be strong.
 ```{r Number of mutations}
 nmut <- function(cancer_data){
   mut_freq <- table(cancer_data$Tumor_Sample_Barcode)
